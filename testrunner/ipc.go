@@ -68,8 +68,8 @@ func (tp *TesterProcess) Start() error {
 	return nil
 }
 
-// RunTest sends the request and consumes all streamed responses until "done".
-func (tp *TesterProcess) RunTest(ctx context.Context, req ipcprotocol.TestRequest, onResponse func(ipcprotocol.Response)) error {
+// SendRequest sends the request and consumes all streamed responses until "done".
+func (tp *TesterProcess) SendRequest(ctx context.Context, req ipcprotocol.Request, onResponse func(ipcprotocol.Response)) error {
 	b, _ := json.Marshal(req)
 	if _, err := fmt.Fprintf(tp.bw, "%s\n", b); err != nil {
 		return err

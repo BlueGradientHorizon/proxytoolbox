@@ -38,12 +38,13 @@ func (tr *TestRunner) RunLatencyTests(ctx context.Context, profiles []parsers.Pr
 
 	res, err := runIPCTests(
 		tr, ctx, profiles, &config,
-		func(configs []*core.OutboundConfig, c *LatencyTestRunnerConfig) ipcprotocol.TestRequest {
+		func(configs []*core.OutboundConfig, c *LatencyTestRunnerConfig) ipcprotocol.Request {
 			testURL := c.TestURL
 			if testURL == "" {
 				testURL = testers.Google204
 			}
-			return ipcprotocol.TestRequest{
+			return ipcprotocol.Request{
+				Type:     "test",
 				TestType: ipcprotocol.LatencyTest,
 				Configs:  toRawConfigs(configs),
 				Settings: mustMarshal(ipcprotocol.LatencySettings{
@@ -88,8 +89,9 @@ func (tr *TestRunner) RunSpeedTests(ctx context.Context, profiles []parsers.Prox
 
 	res, err := runIPCTests(
 		tr, ctx, profiles, &config,
-		func(configs []*core.OutboundConfig, c *SpeedTestRunnerConfig) ipcprotocol.TestRequest {
-			return ipcprotocol.TestRequest{
+		func(configs []*core.OutboundConfig, c *SpeedTestRunnerConfig) ipcprotocol.Request {
+			return ipcprotocol.Request{
+				Type:     "test",
 				TestType: ipcprotocol.SpeedTest,
 				Configs:  toRawConfigs(configs),
 				Settings: mustMarshal(ipcprotocol.SpeedSettings{
@@ -129,7 +131,7 @@ func runIPCTests[TResult any, TConfig testConfig](
 	ctx context.Context,
 	profiles []parsers.ProxyProfile,
 	config TConfig,
-	buildReq func([]*core.OutboundConfig, TConfig) ipcprotocol.TestRequest,
+	buildTestReq func([]*core.OutboundConfig, TConfig) ipcprotocol.Request,
 	convert func(ipcprotocol.Response) TResult,
 	onProgress func(TResult),
 	isSuccess func(TResult) bool,
@@ -148,9 +150,30 @@ func runIPCTests[TResult any, TConfig testConfig](
 	}
 	defer proc.Close()
 
-	var final []TResult
+	// --- Validation phase ---
 	var validationErrors map[string]int
+
+	validateReq := ipcprotocol.Request{
+		Type:    "validate",
+		Configs: toRawConfigs(extractConfigs(profiles)),
+	}
+
+	err := proc.SendRequest(ctx, validateReq, func(r ipcprotocol.Response) {
+		if r.Type == "validation" {
+			validationErrors = r.ValidationErrors
+			if base.CoreCreatedCallback != nil {
+				base.CoreCreatedCallback(validationErrors)
+			}
+		}
+	})
+	if err != nil {
+		return nil, fmt.Errorf("validation: %w", err)
+	}
+
 	currentProfiles := profiles
+
+	// --- Test phase ---
+	var final []TResult
 
 	for round := 0; round < base.Rounds; round++ {
 		select {
@@ -163,18 +186,11 @@ func runIPCTests[TResult any, TConfig testConfig](
 			base.RoundStartedCallback(round, len(currentProfiles))
 		}
 
-		req := buildReq(extractConfigs(currentProfiles), config)
+		req := buildTestReq(extractConfigs(currentProfiles), config)
 		var roundResults []TResult
 
-		err := proc.RunTest(ctx, req, func(r ipcprotocol.Response) {
+		err := proc.SendRequest(ctx, req, func(r ipcprotocol.Response) {
 			switch r.Type {
-			case "validation":
-				if validationErrors == nil {
-					validationErrors = r.ValidationErrors
-					if base.CoreCreatedCallback != nil {
-						base.CoreCreatedCallback(validationErrors)
-					}
-				}
 			case "result":
 				res := convert(r)
 				roundResults = append(roundResults, res)

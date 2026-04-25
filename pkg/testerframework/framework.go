@@ -19,6 +19,7 @@ import (
 // CoreTester is the ONLY interface a new core has to implement.
 type CoreTester interface {
 	Info() ipcprotocol.CoreInfo
+	Validate(ctx context.Context, configs []*core.OutboundConfig, sendResult func(ipcprotocol.Response)) error
 	TestLatency(ctx context.Context, configs []*core.OutboundConfig, settings ipcprotocol.LatencySettings, sendResult func(ipcprotocol.Response)) error
 	TestSpeed(ctx context.Context, configs []*core.OutboundConfig, settings ipcprotocol.SpeedSettings, sendResult func(ipcprotocol.Response)) error
 }
@@ -86,7 +87,7 @@ func handle(conn net.Conn, tester CoreTester) {
 	}()
 
 	for {
-		var req ipcprotocol.TestRequest
+		var req ipcprotocol.Request
 		if err := dec.Decode(&req); err != nil {
 			if err == io.EOF {
 				return
@@ -96,19 +97,26 @@ func handle(conn net.Conn, tester CoreTester) {
 		}
 
 		var err error
-		switch req.TestType {
-		case ipcprotocol.LatencyTest:
-			var s ipcprotocol.LatencySettings
-			if err = json.Unmarshal(req.Settings, &s); err == nil {
-				err = tester.TestLatency(ctx, toCoreConfigs(req.Configs), s, write)
-			}
-		case ipcprotocol.SpeedTest:
-			var s ipcprotocol.SpeedSettings
-			if err = json.Unmarshal(req.Settings, &s); err == nil {
-				err = tester.TestSpeed(ctx, toCoreConfigs(req.Configs), s, write)
+		switch req.Type {
+		case "validate":
+			err = tester.Validate(ctx, toCoreConfigs(req.Configs), write)
+		case "test":
+			switch req.TestType {
+			case ipcprotocol.LatencyTest:
+				var s ipcprotocol.LatencySettings
+				if err = json.Unmarshal(req.Settings, &s); err == nil {
+					err = tester.TestLatency(ctx, toCoreConfigs(req.Configs), s, write)
+				}
+			case ipcprotocol.SpeedTest:
+				var s ipcprotocol.SpeedSettings
+				if err = json.Unmarshal(req.Settings, &s); err == nil {
+					err = tester.TestSpeed(ctx, toCoreConfigs(req.Configs), s, write)
+				}
+			default:
+				err = fmt.Errorf("unknown test type: %s", req.TestType)
 			}
 		default:
-			err = fmt.Errorf("unknown test type: %s", req.TestType)
+			err = fmt.Errorf("unknown request type: %s", req.Type)
 		}
 
 		if err != nil {

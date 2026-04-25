@@ -14,11 +14,14 @@ const (
 	SpeedTest   TestType = "speed"
 )
 
-// TestRequest is sent once by the library over TCP.
-type TestRequest struct {
-	TestType TestType        `json:"test_type"`
+// Request is the generic IPC request that replaces TestRequest.
+// Type can be "validate" or "test".
+// For "test", TestType and Settings must be set.
+type Request struct {
+	Type     string          `json:"type"` // "test" | "validate"
+	TestType TestType        `json:"test_type,omitempty"`
 	Configs  []*RawConfig    `json:"configs"`
-	Settings json.RawMessage `json:"settings"`
+	Settings json.RawMessage `json:"settings,omitempty"`
 }
 
 // RawConfig mirrors core.OutboundConfig but keeps Settings as RawMessage

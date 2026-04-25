@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"strings"
 	"time"
 
 	"github.com/bluegradienthorizon/proxytoolbox/core"
@@ -27,29 +28,52 @@ func (t *sbTester) Info() ipcprotocol.CoreInfo {
 	}
 }
 
+func (t *sbTester) Validate(ctx context.Context, configs []*core.OutboundConfig, sendResult func(ipcprotocol.Response)) error {
+	instance, validationErrors, _, err := createBox(ctx, configs)
+	if instance != nil {
+		instance.Close()
+	}
+
+	var parts []string
+	for errStr, count := range validationErrors {
+		parts = append(parts, fmt.Sprintf("%d x %s", count, errStr))
+	}
+	if err != nil {
+		parts = append(parts, err.Error())
+	}
+
+	sendResult(ipcprotocol.Response{
+		Type:             "validation",
+		ValidationErrors: validationErrors,
+		Error:            strings.Join(parts, "; "),
+	})
+	return nil
+}
+
 func (t *sbTester) TestLatency(ctx context.Context, configs []*core.OutboundConfig, settings ipcprotocol.LatencySettings, sendResult func(ipcprotocol.Response)) error {
-	instance, validationErrors, validConfigs, err := createBox(ctx, configs)
-	sendResult(ipcprotocol.Response{Type: "validation", ValidationErrors: validationErrors})
+	instance, _, validConfigs, err := createBox(ctx, configs)
 
-	// Send error results for configs that failed validation so the caller
-	// receives exactly len(configs) results and its printer never hangs.
-	invalidMap := make(map[string]struct{})
-	for _, cfg := range configs {
-		invalidMap[cfg.Tag] = struct{}{}
-	}
+	validMap := make(map[string]struct{})
 	for _, cfg := range validConfigs {
-		delete(invalidMap, cfg.Tag)
-	}
-	for tag := range invalidMap {
-		sendResult(ipcprotocol.Response{Type: "result", Tag: tag, Error: "validation failed"})
+		validMap[cfg.Tag] = struct{}{}
 	}
 
-	if len(validConfigs) == 0 || err != nil {
-		if err != nil && len(validConfigs) > 0 {
+	for _, cfg := range configs {
+		if _, ok := validMap[cfg.Tag]; !ok {
+			sendResult(ipcprotocol.Response{Type: "result", Tag: cfg.Tag, Error: "validation failed"})
+		}
+	}
+
+	if err != nil {
+		if len(validConfigs) > 0 {
 			for _, cfg := range validConfigs {
 				sendResult(ipcprotocol.Response{Type: "result", Tag: cfg.Tag, Error: err.Error()})
 			}
 		}
+		return nil
+	}
+
+	if len(validConfigs) == 0 {
 		return nil
 	}
 
@@ -95,26 +119,29 @@ func (t *sbTester) TestLatency(ctx context.Context, configs []*core.OutboundConf
 }
 
 func (t *sbTester) TestSpeed(ctx context.Context, configs []*core.OutboundConfig, settings ipcprotocol.SpeedSettings, sendResult func(ipcprotocol.Response)) error {
-	instance, validationErrors, validConfigs, err := createBox(ctx, configs)
-	sendResult(ipcprotocol.Response{Type: "validation", ValidationErrors: validationErrors})
+	instance, _, validConfigs, err := createBox(ctx, configs)
 
-	invalidMap := make(map[string]struct{})
-	for _, cfg := range configs {
-		invalidMap[cfg.Tag] = struct{}{}
-	}
+	validMap := make(map[string]struct{})
 	for _, cfg := range validConfigs {
-		delete(invalidMap, cfg.Tag)
-	}
-	for tag := range invalidMap {
-		sendResult(ipcprotocol.Response{Type: "result", Tag: tag, Error: "validation failed"})
+		validMap[cfg.Tag] = struct{}{}
 	}
 
-	if len(validConfigs) == 0 || err != nil {
-		if err != nil && len(validConfigs) > 0 {
+	for _, cfg := range configs {
+		if _, ok := validMap[cfg.Tag]; !ok {
+			sendResult(ipcprotocol.Response{Type: "result", Tag: cfg.Tag, Error: "validation failed"})
+		}
+	}
+
+	if err != nil {
+		if len(validConfigs) > 0 {
 			for _, cfg := range validConfigs {
 				sendResult(ipcprotocol.Response{Type: "result", Tag: cfg.Tag, Error: err.Error()})
 			}
 		}
+		return nil
+	}
+
+	if len(validConfigs) == 0 {
 		return nil
 	}
 
