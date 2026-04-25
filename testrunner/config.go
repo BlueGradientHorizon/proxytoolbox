@@ -6,18 +6,10 @@ import (
 	"github.com/bluegradienthorizon/proxytoolbox/testers"
 )
 
-// TestRunnerConfig configures test runner behavior and core selection.
+// TestRunnerConfig configures test runner behavior and tester path.
 type TestRunnerConfig struct {
-	// CoreType specifies which proxy core to use (e.g., SingBoxCore)
-	CoreType CoreType
-
-	// LogLevel sets the logging level for the core (default: "panic")
-	// Common values: "trace", "debug", "info", "warn", "error", "fatal", "panic"
-	LogLevel string
-
-	// AutoCleanup enables automatic resource cleanup when tests complete (default: true)
-	// When true, the test runner will automatically call Close() after high-level test methods
-	AutoCleanup bool
+	// TesterPath is the absolute path to the tester binary.
+	TesterPath string
 }
 
 // BaseTestRunnerConfig contains common configuration fields shared by all test types.
@@ -30,9 +22,8 @@ type BaseTestRunnerConfig struct {
 	// Multiple rounds help identify consistently performing proxies
 	Rounds int
 
-	// Concurrency limits how many outbounds are tested simultaneously in a single round
-	// If set to 0 or negative, all outbounds are tested concurrently (default behavior)
-	// Example: Concurrency=10 means at most 10 proxies are tested at the same time
+	// Concurrency limits how many outbounds are tested simultaneously in a single round.
+	// If set to 0 or negative, all outbounds are tested concurrently.
 	Concurrency int
 
 	// CoreCreatedCallback is called after core creation with validation errors

@@ -1,7 +1,4 @@
-// Package singbox provides an adapter for converting core-agnostic configurations
-// to sing-box-specific types. This adapter allows the library to use sing-box as
-// a proxy core implementation.
-package singbox
+package main
 
 import (
 	"errors"
@@ -13,18 +10,12 @@ import (
 	"github.com/sagernet/sing/common/json/badoption"
 )
 
-// Adapter converts generic configurations to sing-box types.
-// It implements the core.ConfigConverter interface.
 type Adapter struct{}
 
-// NewAdapter creates a new sing-box adapter instance.
 func NewAdapter() *Adapter {
 	return &Adapter{}
 }
 
-// ConvertOutbound converts a generic OutboundConfig to a sing-box option.Outbound.
-// This method handles all supported protocol types: VLESS, Trojan, VMess, Shadowsocks, and Hysteria2.
-// It preserves all configuration details including TLS and transport settings.
 func (a *Adapter) ConvertOutbound(config *core.OutboundConfig) (*option.Outbound, error) {
 	if config == nil {
 		return nil, errors.New("ConvertOutbound: nil config")
@@ -35,7 +26,6 @@ func (a *Adapter) ConvertOutbound(config *core.OutboundConfig) (*option.Outbound
 		Type: config.Type,
 	}
 
-	// Convert protocol-specific settings
 	switch settings := config.Settings.(type) {
 	case core.VLESSSettings:
 		vlessOptions := option.VLESSOutboundOptions{
@@ -153,8 +143,6 @@ func (a *Adapter) ConvertOutbound(config *core.OutboundConfig) (*option.Outbound
 	return outbound, nil
 }
 
-// convertTLS converts a generic TLSConfig to sing-box OutboundTLSOptions.
-// It handles TLS, Reality, ECH, and uTLS fingerprinting configurations.
 func (a *Adapter) convertTLS(config *core.TLSConfig) (*option.OutboundTLSOptions, error) {
 	if config == nil || !config.Enabled {
 		return nil, nil
@@ -166,7 +154,6 @@ func (a *Adapter) convertTLS(config *core.TLSConfig) (*option.OutboundTLSOptions
 		Insecure:   config.Insecure,
 	}
 
-	// Convert ALPN list
 	if len(config.ALPN) > 0 {
 		tls.ALPN = badoption.Listable[string]{}
 		for _, alpn := range config.ALPN {
@@ -174,7 +161,6 @@ func (a *Adapter) convertTLS(config *core.TLSConfig) (*option.OutboundTLSOptions
 		}
 	}
 
-	// Convert uTLS fingerprint
 	if config.Fingerprint != "" {
 		tls.UTLS = &option.OutboundUTLSOptions{
 			Enabled:     true,
@@ -182,14 +168,12 @@ func (a *Adapter) convertTLS(config *core.TLSConfig) (*option.OutboundTLSOptions
 		}
 	}
 
-	// Convert Reality configuration
 	if config.Reality != nil {
 		tls.Reality = &option.OutboundRealityOptions{
 			Enabled:   true,
 			PublicKey: config.Reality.PublicKey,
 			ShortID:   config.Reality.ShortID,
 		}
-		// Reality requires UTLS
 		if tls.UTLS == nil {
 			tls.UTLS = &option.OutboundUTLSOptions{
 				Enabled:     true,
@@ -198,7 +182,6 @@ func (a *Adapter) convertTLS(config *core.TLSConfig) (*option.OutboundTLSOptions
 		}
 	}
 
-	// Convert ECH configuration
 	if config.ECH != nil {
 		tls.ECH = &option.OutboundECHOptions{
 			Enabled: true,
@@ -209,8 +192,6 @@ func (a *Adapter) convertTLS(config *core.TLSConfig) (*option.OutboundTLSOptions
 	return tls, nil
 }
 
-// convertTransport converts a generic TransportConfig to sing-box V2RayTransportOptions.
-// It handles all supported transport types: TCP, HTTP/2, WebSocket, QUIC, gRPC, and HTTP Upgrade.
 func (a *Adapter) convertTransport(config *core.TransportConfig) (*option.V2RayTransportOptions, error) {
 	if config == nil {
 		return nil, nil
@@ -220,9 +201,7 @@ func (a *Adapter) convertTransport(config *core.TransportConfig) (*option.V2RayT
 
 	switch config.Type {
 	case "tcp", "":
-		// No transport options needed for raw TCP
 		return nil, nil
-
 	case "http":
 		transport.Type = C.V2RayTransportTypeHTTP
 		if config.HTTP != nil {
@@ -232,7 +211,6 @@ func (a *Adapter) convertTransport(config *core.TransportConfig) (*option.V2RayT
 				Method: config.HTTP.Method,
 			}
 		}
-
 	case "ws":
 		transport.Type = C.V2RayTransportTypeWebsocket
 		if config.WebSocket != nil {
@@ -240,11 +218,9 @@ func (a *Adapter) convertTransport(config *core.TransportConfig) (*option.V2RayT
 				Path: config.WebSocket.Path,
 			}
 		}
-
 	case "quic":
 		transport.Type = C.V2RayTransportTypeQUIC
 		transport.QUICOptions = option.V2RayQUICOptions{}
-
 	case "grpc":
 		transport.Type = C.V2RayTransportTypeGRPC
 		if config.GRPC != nil {
@@ -252,7 +228,6 @@ func (a *Adapter) convertTransport(config *core.TransportConfig) (*option.V2RayT
 				ServiceName: config.GRPC.ServiceName,
 			}
 		}
-
 	case "httpupgrade":
 		transport.Type = C.V2RayTransportTypeHTTPUpgrade
 		if config.HTTPUpgrade != nil {
@@ -261,7 +236,6 @@ func (a *Adapter) convertTransport(config *core.TransportConfig) (*option.V2RayT
 				Path: config.HTTPUpgrade.Path,
 			}
 		}
-
 	default:
 		return nil, fmt.Errorf("convertTransport: unsupported transport type %s", config.Type)
 	}
