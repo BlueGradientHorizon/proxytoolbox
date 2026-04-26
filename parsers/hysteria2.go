@@ -4,13 +4,12 @@ import (
 	"errors"
 
 	"github.com/bluegradienthorizon/proxytoolbox/core"
-	"github.com/bluegradienthorizon/proxytoolbox/utils"
 )
 
 type Hysteria2Parser struct{}
 
 func (p Hysteria2Parser) ParseConfig(connURI string) (*ProxyConfig, error) {
-	connURI, err := utils.TryFixURI(connURI)
+	connURI, err := tryFixURI(connURI)
 	if err != nil {
 		return nil, errors.New("Hysteria2Parser.ParseConfig: " + err.Error())
 	}

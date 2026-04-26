@@ -4,13 +4,12 @@ import (
 	"errors"
 
 	"github.com/bluegradienthorizon/proxytoolbox/core"
-	"github.com/bluegradienthorizon/proxytoolbox/utils"
 )
 
 type VLESSParser struct{}
 
 func (p VLESSParser) ParseConfig(connURI string) (*ProxyConfig, error) {
-	connURI, err := utils.TryFixURI(connURI)
+	connURI, err := tryFixURI(connURI)
 	if err != nil {
 		return nil, errors.New("VLESSParser.ParseConfig: " + err.Error())
 	}

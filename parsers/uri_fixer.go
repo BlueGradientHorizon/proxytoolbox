@@ -1,4 +1,4 @@
-package utils
+package parsers
 
 import (
 	"errors"
@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-func TryFixURI(uri string) (string, error) {
+func tryFixURI(uri string) (string, error) {
 	// Fix №1: trim string
 	uri = strings.TrimSpace(uri)
 	if uri == "" {

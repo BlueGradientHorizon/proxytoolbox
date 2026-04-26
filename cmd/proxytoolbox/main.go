@@ -10,11 +10,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bluegradienthorizon/proxytoolbox/cmd/proxytoolbox/utils"
 	"github.com/bluegradienthorizon/proxytoolbox/parsers"
 	"github.com/bluegradienthorizon/proxytoolbox/testers"
 	"github.com/bluegradienthorizon/proxytoolbox/testrunner"
-	"github.com/bluegradienthorizon/proxytoolbox/tools"
-	"github.com/bluegradienthorizon/proxytoolbox/utils"
 )
 
 func main() {
@@ -63,7 +62,7 @@ func main() {
 
 	inputFile := "link_list.txt"
 	outputFile := "configs.txt"
-	tools.DownloadConfigs(inputFile, outputFile, 10*time.Second)
+	utils.DownloadConfigs(inputFile, outputFile, 10*time.Second)
 
 	fmt.Printf("Attempting to load configurations from file: %s\n", outputFile)
 

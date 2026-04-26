@@ -6,13 +6,12 @@ import (
 	"strings"
 
 	"github.com/bluegradienthorizon/proxytoolbox/core"
-	"github.com/bluegradienthorizon/proxytoolbox/utils"
 )
 
 type ShadowsocksParser struct{}
 
 func (p ShadowsocksParser) ParseConfig(connURI string) (*ProxyConfig, error) {
-	connURI, err := utils.TryFixURI(connURI)
+	connURI, err := tryFixURI(connURI)
 	if err != nil {
 		return nil, errors.New("ShadowsocksParser.ParseConfig: " + err.Error())
 	}

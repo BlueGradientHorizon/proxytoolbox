@@ -8,10 +8,13 @@ endif
 build: proxytoolbox tester-singbox
 
 proxytoolbox:
-	go build -o bin/proxytoolbox$(EXT)
+	cd cmd/proxytoolbox && make
 
 tester-singbox:
-	go build -o bin/singbox-tester$(EXT) -tags with_utls,with_quic ./cmd/testers/singbox
+	cd cmd/testers/singbox && make
+
+run: build
+	./bin/proxytoolbox$(EXT)
 
 clean:
 ifeq ($(OS),Windows_NT)

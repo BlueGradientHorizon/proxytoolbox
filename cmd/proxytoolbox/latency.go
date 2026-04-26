@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/bluegradienthorizon/proxytoolbox/cmd/proxytoolbox/utils"
 	"github.com/bluegradienthorizon/proxytoolbox/parsers"
-	"github.com/bluegradienthorizon/proxytoolbox/printers"
 	"github.com/bluegradienthorizon/proxytoolbox/testers"
 	"github.com/bluegradienthorizon/proxytoolbox/testrunner"
 )
@@ -25,7 +25,7 @@ func runLatencyTest(ctx context.Context, configs []parsers.ProxyConfig, ltSettin
 	defer runner.Close()
 
 	var printerChan chan testers.LatencyTestResult
-	var printer *printers.StatsPrinter
+	var printer *utils.StatsPrinter
 	var printDone chan bool
 
 	config := testrunner.LatencyTestRunnerSettings{
@@ -44,7 +44,7 @@ func runLatencyTest(ctx context.Context, configs []parsers.ProxyConfig, ltSettin
 			RoundStartedCallback: func(round int, outboundsLen int) {
 				println(fmt.Sprintf("round %d/%d", round+1, ltSettings.Rounds))
 				printerChan = make(chan testers.LatencyTestResult, outboundsLen)
-				printer = printers.NewStatsPrinter(outboundsLen, printerChan)
+				printer = utils.NewStatsPrinter(outboundsLen, printerChan)
 				printDone = make(chan bool)
 				go printer.Start(printDone)
 			},
