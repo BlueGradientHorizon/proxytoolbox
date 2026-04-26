@@ -151,7 +151,11 @@ func (t *sbTester) TestLatency(ctx context.Context, settings ipcprotocol.Latency
 	wait()
 
 	// Close asynchronously so the "done" response isn't delayed by teardown.
-	go instance.Close()
+	go func() {
+		start := time.Now()
+		instance.Close()
+		fmt.Printf("instance.Close() took %v\n", time.Since(start))
+	}()
 	return nil
 }
 
@@ -231,7 +235,11 @@ func (t *sbTester) TestSpeed(ctx context.Context, settings ipcprotocol.SpeedSett
 	wait()
 
 	// Close asynchronously so the "done" response isn't delayed by teardown.
-	go instance.Close()
+	go func() {
+		start := time.Now()
+		instance.Close()
+		fmt.Printf("instance.Close() took %v\n", time.Since(start))
+	}()
 	return nil
 }
 
@@ -251,7 +259,10 @@ func createBox(ctx context.Context, configs []*core.OutboundConfig) (*box.Box, m
 		testCtx := include.Context(ctx)
 		tmp, err := box.New(box.Options{
 			Context: testCtx,
-			Options: option.Options{Outbounds: []option.Outbound{*sbOut}},
+			Options: option.Options{
+				Log:       &option.LogOptions{Disabled: true},
+				Outbounds: []option.Outbound{*sbOut},
+			},
 		})
 		if err != nil {
 			validationErrors[cfg.Type+": "+err.Error()]++
@@ -267,7 +278,7 @@ func createBox(ctx context.Context, configs []*core.OutboundConfig) (*box.Box, m
 	}
 
 	opts := option.Options{
-		Log:       &option.LogOptions{Level: "panic", Timestamp: true},
+		Log:       &option.LogOptions{Disabled: true},
 		Outbounds: validOutbounds,
 	}
 	instanceCtx := include.Context(ctx)
@@ -293,7 +304,7 @@ func buildInstance(ctx context.Context, configs []*core.OutboundConfig) (*box.Bo
 		return nil, fmt.Errorf("no valid configs")
 	}
 	opts := option.Options{
-		Log:       &option.LogOptions{Level: "panic", Timestamp: true},
+		Log:       &option.LogOptions{Disabled: true},
 		Outbounds: outbounds,
 	}
 	instanceCtx := include.Context(ctx)

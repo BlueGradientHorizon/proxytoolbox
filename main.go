@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"flag"
 	"fmt"
 	"os"
 	"slices"
@@ -17,6 +18,10 @@ import (
 )
 
 func main() {
+	var testerDebug bool
+	flag.BoolVar(&testerDebug, "tester-debug", false, "Print tester stdout and stderr")
+	flag.Parse()
+
 	// Configure latency test parameters
 	latencyParams := LatencyTestParams{
 		Concurrency: 0,
@@ -105,7 +110,12 @@ func main() {
 
 	ctx := context.Background()
 
-	latencyResults, taggedProfiles, ltErr := runLatencyTest(ctx, profiles, latencyParams, testerPath)
+	ltRunnerConfig := testrunner.TestRunnerConfig{
+		TesterPath:  testerPath,
+		TesterDebug: testerDebug,
+	}
+
+	latencyResults, taggedProfiles, ltErr := runLatencyTest(ctx, profiles, latencyParams, ltRunnerConfig)
 	if ltErr != nil {
 		fmt.Printf("Latency test error: %v\n", ltErr)
 		os.Exit(-1)
@@ -119,11 +129,16 @@ func main() {
 	// Write results to file
 	writeResultsToFile(latencyResults, taggedProfiles)
 
+	stRunnerConfig := testrunner.TestRunnerConfig{
+		TesterPath:  testerPath,
+		TesterDebug: testerDebug,
+	}
+
 	// Run speed tests if enabled
 	if runSpeedTestFlag {
 		// var speedResults []testers.SpeedTestResult
 		var speedErr error
-		_, taggedProfiles, speedErr = runSpeedTest(ctx, taggedProfiles, speedParams, testerPath)
+		_, taggedProfiles, speedErr = runSpeedTest(ctx, taggedProfiles, speedParams, stRunnerConfig)
 		if speedErr != nil {
 			fmt.Printf("Speed test error: %v\n", speedErr)
 		}

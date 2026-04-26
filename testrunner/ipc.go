@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -17,11 +18,12 @@ import (
 
 // TesterProcess wraps a single tester binary invocation.
 type TesterProcess struct {
-	path string
-	cmd  *exec.Cmd
-	conn net.Conn
-	dec  *json.Decoder
-	bw   *bufio.Writer
+	path  string
+	debug bool
+	cmd   *exec.Cmd
+	conn  net.Conn
+	dec   *json.Decoder
+	bw    *bufio.Writer
 }
 
 // Start executes the tester with --run, reads the TCP port from stdout, and connects.
@@ -32,7 +34,10 @@ func (tp *TesterProcess) Start() error {
 		return err
 	}
 	stderr, _ := tp.cmd.StderrPipe()
-	go func() { io.Copy(io.Discard, stderr) }()
+
+	if !tp.debug {
+		go func() { io.Copy(io.Discard, stderr) }()
+	}
 
 	if err := tp.cmd.Start(); err != nil {
 		return err
@@ -54,6 +59,11 @@ func (tp *TesterProcess) Start() error {
 	if err != nil {
 		tp.kill()
 		return fmt.Errorf("invalid port: %w", err)
+	}
+
+	if tp.debug {
+		go func() { io.Copy(os.Stdout, rd) }()
+		go func() { io.Copy(os.Stderr, stderr) }()
 	}
 
 	d := net.Dialer{Timeout: 5 * time.Second}

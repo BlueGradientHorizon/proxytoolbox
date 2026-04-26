@@ -17,10 +17,8 @@ type LatencyTestParams struct {
 	Rounds      int
 }
 
-func runLatencyTest(ctx context.Context, profiles []parsers.ProxyProfile, params LatencyTestParams, testerPath string) ([]testers.LatencyTestResult, []parsers.ProxyProfile, error) {
-	runner, err := testrunner.NewTestRunner(testrunner.TestRunnerConfig{
-		TesterPath: testerPath,
-	})
+func runLatencyTest(ctx context.Context, profiles []parsers.ProxyProfile, params LatencyTestParams, runnerConfig testrunner.TestRunnerConfig) ([]testers.LatencyTestResult, []parsers.ProxyProfile, error) {
+	runner, err := testrunner.NewTestRunner(runnerConfig)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create test runner: %w", err)
 	}

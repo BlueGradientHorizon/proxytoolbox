@@ -20,15 +20,13 @@ type SpeedTestParams struct {
 	TargetBytes int64
 }
 
-func runSpeedTest(ctx context.Context, profiles []parsers.ProxyProfile, params SpeedTestParams, testerPath string) ([]testers.SpeedTestResult, []parsers.ProxyProfile, error) {
+func runSpeedTest(ctx context.Context, profiles []parsers.ProxyProfile, params SpeedTestParams, runnerConfig testrunner.TestRunnerConfig) ([]testers.SpeedTestResult, []parsers.ProxyProfile, error) {
 	// Limit profiles based on test limit
 	if len(profiles) > params.TestLimit {
 		profiles = profiles[:params.TestLimit]
 	}
 
-	runner, err := testrunner.NewTestRunner(testrunner.TestRunnerConfig{
-		TesterPath:  testerPath,
-	})
+	runner, err := testrunner.NewTestRunner(runnerConfig)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create test runner: %w", err)
 	}

@@ -14,6 +14,7 @@ import (
 // TestRunner manages tester process lifecycle and test execution via IPC.
 type TestRunner struct {
 	testerPath  string
+	testerDebug bool
 	autoCleanup bool
 }
 
@@ -22,7 +23,7 @@ func NewTestRunner(config TestRunnerConfig) (*TestRunner, error) {
 	if config.TesterPath == "" {
 		return nil, fmt.Errorf("tester path is required")
 	}
-	return &TestRunner{testerPath: config.TesterPath}, nil
+	return &TestRunner{testerPath: config.TesterPath, testerDebug: config.TesterDebug}, nil
 }
 
 // Close cleans up resources used by the test runner.
@@ -152,7 +153,7 @@ func runIPCTests[TResult any, TConfig testConfig](
 		profiles[i].Config.Tag = fmt.Sprintf("outbound-%d", i)
 	}
 
-	proc := &TesterProcess{path: tr.testerPath}
+	proc := &TesterProcess{path: tr.testerPath, debug: tr.testerDebug}
 	if err := proc.Start(); err != nil {
 		return nil, fmt.Errorf("start tester: %w", err)
 	}

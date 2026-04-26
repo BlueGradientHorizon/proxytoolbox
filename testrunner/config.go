@@ -10,6 +10,9 @@ import (
 type TestRunnerConfig struct {
 	// TesterPath is the absolute path to the tester binary.
 	TesterPath string
+
+	// TesterDebug enables printing of tester stdout and stderr.
+	TesterDebug bool
 }
 
 // BaseTestRunnerConfig contains common configuration fields shared by all test types.
