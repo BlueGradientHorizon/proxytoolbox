@@ -16,7 +16,7 @@ func (p ShadowsocksParser) ParseConfig(connURI string) (*ProxyConfig, error) {
 		return nil, errors.New("ShadowsocksParser.ParseConfig: " + err.Error())
 	}
 
-	uri, addr, port, err := extractCommonURIData(connURI, "shadowsocks")
+	uri, addr, port, err := extractCommonURIData(connURI, "shadowsocks", nil)
 	if err != nil {
 		return nil, errors.New("ShadowsocksParser.ParseConfig: " + err.Error())
 	}
@@ -24,7 +24,7 @@ func (p ShadowsocksParser) ParseConfig(connURI string) (*ProxyConfig, error) {
 	decodedHostBytes, err := base64.StdEncoding.DecodeString(uri.Host)
 	if err == nil {
 		decodedHost := string(decodedHostBytes)
-		uri, addr, port, err = extractCommonURIData("ss://"+decodedHost+"#"+uri.RawFragment, "shadowsocks")
+		uri, addr, port, err = extractCommonURIData("ss://"+decodedHost+"#"+uri.RawFragment, "shadowsocks", nil)
 		if err != nil {
 			return nil, errors.New("ShadowsocksParser.ParseConfig: " + err.Error())
 		}

@@ -148,63 +148,20 @@ func buildV2RayTransportOptions(query url.Values, protocol string) (*core.Transp
 	return config, nil
 }
 
-func fixTrojanURI(uri string) (*url.URL, error) {
-	remarkSplitLastIndex := strings.LastIndex(uri, "#")
+type CustomURIFixer func(uri string) (*url.URL, error)
 
-	var beforeRemark string
-	if remarkSplitLastIndex == -1 {
-		beforeRemark = uri
-	} else {
-		beforeRemark = uri[:remarkSplitLastIndex]
-	}
+func parseConfigURI(uri string, scheme string, fixer CustomURIFixer) (*url.URL, error) {
+	var u *url.URL
+	var err error
 
-	var remark string
-	if remarkSplitLastIndex < len(uri) {
-		remark = uri[remarkSplitLastIndex+1:]
-	} else {
-		remark = ""
-	}
-
-	lastAt := strings.LastIndex(beforeRemark, "@")
-	if lastAt == -1 {
-		return nil, errors.New("fixTrojanURI: malformed URI: symbol '@' not found")
-	}
-
-	beforeAt := beforeRemark[:lastAt]
-	afterAt := beforeRemark[lastAt+1:]
-
-	schemeSplit := strings.SplitN(beforeAt, "://", 2)
-	if len(schemeSplit) < 2 {
-		return nil, errors.New("fixTrojanURI: malformed URI: split by '://' failed")
-	}
-	scheme := schemeSplit[0]
-	userInfo := schemeSplit[1]
-
-	querySplit := strings.SplitN(afterAt, "?", 2)
-	hostPort := querySplit[0]
-
-	tempURI := scheme + "://placeholder@" + afterAt
-	u, err := url.Parse(tempURI)
-	if err != nil {
-		return nil, errors.New("fixTrojanURI: " + err.Error())
-	}
-
-	u.User = url.User(userInfo)
-	u.Host = strings.ReplaceAll(hostPort, "/", "")
-	u.Fragment = remark
-	return u, nil
-}
-
-func parseConfigURI(uri string, scheme string) (*url.URL, error) {
-	if scheme == "trojan" {
-		u, err := fixTrojanURI(uri)
+	if fixer != nil {
+		u, err = fixer(uri)
 		if err != nil {
 			return nil, errors.New("parseConfigURI: " + err.Error())
 		}
-		return u, nil
 	}
 
-	u, err := url.Parse(uri)
+	u, err = url.Parse(uri)
 	if err != nil {
 		return nil, errors.New("parseConfigURI: " + err.Error())
 	}
@@ -259,8 +216,8 @@ func parseNetlocForEndpoint(u *url.URL) (string, uint16, bool) {
 	return address, uint16(port), true
 }
 
-func extractCommonURIData(uri string, scheme string) (*url.URL, string, uint16, error) {
-	parsedURI, err := parseConfigURI(uri, scheme)
+func extractCommonURIData(uri string, scheme string, fixer CustomURIFixer) (*url.URL, string, uint16, error) {
+	parsedURI, err := parseConfigURI(uri, scheme, fixer)
 	if err != nil {
 		return nil, "", 0, errors.New("extractCommonURIData: " + err.Error())
 	}

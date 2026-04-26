@@ -14,7 +14,7 @@ func (p VLESSParser) ParseConfig(connURI string) (*ProxyConfig, error) {
 		return nil, errors.New("VLESSParser.ParseConfig: " + err.Error())
 	}
 
-	uri, addr, port, err := extractCommonURIData(connURI, "vless")
+	uri, addr, port, err := extractCommonURIData(connURI, "vless", nil)
 	if err != nil {
 		return nil, errors.New("VLESSParser.ParseConfig: " + err.Error())
 	}

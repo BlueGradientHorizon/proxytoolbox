@@ -14,7 +14,7 @@ func (p Hysteria2Parser) ParseConfig(connURI string) (*ProxyConfig, error) {
 		return nil, errors.New("Hysteria2Parser.ParseConfig: " + err.Error())
 	}
 
-	uri, addr, port, err := extractCommonURIData(connURI, "hysteria2")
+	uri, addr, port, err := extractCommonURIData(connURI, "hysteria2", nil)
 	if err != nil {
 		return nil, errors.New("Hysteria2Parser.ParseConfig: " + err.Error())
 	}
