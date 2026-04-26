@@ -7,11 +7,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/bluegradienthorizon/proxytoolbox/cmd/testers/utils"
 	"github.com/bluegradienthorizon/proxytoolbox/core"
 	"github.com/bluegradienthorizon/proxytoolbox/pkg/ipcprotocol"
 	"github.com/bluegradienthorizon/proxytoolbox/pkg/testerframework"
 	"github.com/bluegradienthorizon/proxytoolbox/testers"
-	"github.com/bluegradienthorizon/proxytoolbox/utils"
 
 	box "github.com/sagernet/sing-box"
 	"github.com/sagernet/sing-box/include"
