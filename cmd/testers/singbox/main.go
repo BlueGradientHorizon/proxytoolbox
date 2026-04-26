@@ -34,7 +34,7 @@ func (t *sbTester) Info() ipcprotocol.CoreInfo {
 }
 
 func (t *sbTester) Validate(ctx context.Context, configs []*core.OutboundConfig, sendResult func(ipcprotocol.Response)) error {
-	instance, validationErrors, validConfigs, err := createBox(ctx, configs)
+	instance, validationErrors, validConfigs, err := createInstance(ctx, configs, true)
 	if instance != nil {
 		instance.Close()
 	}
@@ -102,7 +102,7 @@ func (t *sbTester) TestLatency(ctx context.Context, settings ipcprotocol.Latency
 		return nil
 	}
 
-	instance, err := buildInstance(ctx, configs)
+	instance, _, _, err := createInstance(ctx, configs, false)
 	if err != nil {
 		for _, cfg := range configs {
 			sendResult(ipcprotocol.Response{Type: ipcprotocol.ResponseTypeResult, Tag: cfg.Tag, Error: err.Error()})
@@ -177,7 +177,7 @@ func (t *sbTester) TestSpeed(ctx context.Context, settings ipcprotocol.SpeedSett
 		return nil
 	}
 
-	instance, err := buildInstance(ctx, configs)
+	instance, _, _, err := createInstance(ctx, configs, false)
 	if err != nil {
 		for _, cfg := range configs {
 			sendResult(ipcprotocol.Response{Type: ipcprotocol.ResponseTypeResult, Tag: cfg.Tag, Error: err.Error()})
@@ -243,63 +243,7 @@ func (t *sbTester) TestSpeed(ctx context.Context, settings ipcprotocol.SpeedSett
 	return nil
 }
 
-// createBox validates configs by attempting to convert and instantiate each one individually.
-func createBox(ctx context.Context, configs []*core.OutboundConfig) (*box.Box, map[string]int, []*core.OutboundConfig, error) {
-	adapter := NewAdapter()
-	validationErrors := make(map[string]int)
-	var validOutbounds []option.Outbound
-	var validConfigs []*core.OutboundConfig
-
-	for _, cfg := range configs {
-		sbOut, err := adapter.ConvertOutbound(cfg)
-		if err != nil {
-			validationErrors[cfg.Type+": "+err.Error()]++
-			continue
-		}
-		testCtx := include.Context(ctx)
-		tmp, err := box.New(box.Options{
-			Context: testCtx,
-			Options: option.Options{
-				Log:       &option.LogOptions{Disabled: true},
-				Outbounds: []option.Outbound{*sbOut},
-			},
-		})
-		if err != nil {
-			validationErrors[cfg.Type+": "+err.Error()]++
-			continue
-		}
-		tmp.Close()
-		validOutbounds = append(validOutbounds, *sbOut)
-		validConfigs = append(validConfigs, cfg)
-	}
-
-	if len(validOutbounds) == 0 {
-		return nil, validationErrors, nil, fmt.Errorf("no valid configs")
-	}
-
-	opts := option.Options{
-		Log:       &option.LogOptions{Disabled: true},
-		Outbounds: validOutbounds,
-	}
-	instanceCtx := include.Context(ctx)
-	instance, err := box.New(box.Options{Context: instanceCtx, Options: opts})
-	if err != nil {
-		return nil, validationErrors, validConfigs, err
-	}
-	return instance, validationErrors, validConfigs, nil
-}
-
-// buildInstance creates a sing-box instance from previously validated configs without re-validating.
-func buildInstance(ctx context.Context, configs []*core.OutboundConfig) (*box.Box, error) {
-	adapter := NewAdapter()
-	outbounds := make([]option.Outbound, 0, len(configs))
-	for _, cfg := range configs {
-		sbOut, err := adapter.ConvertOutbound(cfg)
-		if err != nil {
-			return nil, err
-		}
-		outbounds = append(outbounds, *sbOut)
-	}
+func newBoxInstance(ctx context.Context, outbounds []option.Outbound) (*box.Box, error) {
 	if len(outbounds) == 0 {
 		return nil, fmt.Errorf("no valid configs")
 	}
@@ -309,6 +253,40 @@ func buildInstance(ctx context.Context, configs []*core.OutboundConfig) (*box.Bo
 	}
 	instanceCtx := include.Context(ctx)
 	return box.New(box.Options{Context: instanceCtx, Options: opts})
+}
+
+func createInstance(ctx context.Context, configs []*core.OutboundConfig, validate bool) (*box.Box, map[string]int, []*core.OutboundConfig, error) {
+	adapter := NewAdapter()
+	validationErrors := make(map[string]int)
+	var validOutbounds []option.Outbound
+	var validConfigs []*core.OutboundConfig
+
+	for _, cfg := range configs {
+		sbOut, err := adapter.ConvertOutbound(cfg)
+		if err != nil {
+			if validate {
+				validationErrors[cfg.Type+": "+err.Error()]++
+				continue
+			}
+			return nil, nil, nil, err
+		}
+		if validate {
+			tmp, err := newBoxInstance(ctx, []option.Outbound{*sbOut})
+			if err != nil {
+				validationErrors[cfg.Type+": "+err.Error()]++
+				continue
+			}
+			tmp.Close()
+		}
+		validOutbounds = append(validOutbounds, *sbOut)
+		validConfigs = append(validConfigs, cfg)
+	}
+
+	instance, err := newBoxInstance(ctx, validOutbounds)
+	if err != nil {
+		return nil, validationErrors, validConfigs, err
+	}
+	return instance, validationErrors, validConfigs, nil
 }
 
 func main() {
