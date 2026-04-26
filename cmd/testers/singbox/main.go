@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net"
-	"strings"
 	"sync"
 	"time"
 
@@ -36,7 +35,7 @@ func (t *sbTester) Info() ipcprotocol.CoreInfo {
 
 func (t *sbTester) Validate(ctx context.Context, configs []*core.OutboundConfig, sendResult func(ipcprotocol.Response)) error {
 	adapter := NewAdapter()
-	validationErrors := make(map[string]int)
+	var validationErrors []ipcprotocol.ValidationError
 	var validOutbounds []option.Outbound
 	var validConfigs []*core.OutboundConfig
 	outboundMap := make(map[string]option.Outbound)
@@ -44,12 +43,18 @@ func (t *sbTester) Validate(ctx context.Context, configs []*core.OutboundConfig,
 	for _, cfg := range configs {
 		sbOut, err := adapter.ConvertOutbound(cfg)
 		if err != nil {
-			validationErrors["convert: "+cfg.Type+": "+err.Error()]++
+			validationErrors = append(validationErrors, ipcprotocol.ValidationError{
+				Tag:   cfg.Tag,
+				Error: "convert: " + cfg.Type + ": " + err.Error(),
+			})
 			continue
 		}
 		tmp, err := newBoxInstance(ctx, []option.Outbound{*sbOut})
 		if err != nil {
-			validationErrors["instantiate: "+cfg.Type+": "+err.Error()]++
+			validationErrors = append(validationErrors, ipcprotocol.ValidationError{
+				Tag:   cfg.Tag,
+				Error: "instantiate: " + cfg.Type + ": " + err.Error(),
+			})
 			continue
 		}
 		tmp.Close()
@@ -64,18 +69,16 @@ func (t *sbTester) Validate(ctx context.Context, configs []*core.OutboundConfig,
 		instance.Close()
 	}
 
-	var parts []string
-	for errStr, count := range validationErrors {
-		parts = append(parts, fmt.Sprintf("%d x %s", count, errStr))
-	}
 	if err != nil {
-		parts = append(parts, err.Error())
+		validationErrors = append(validationErrors, ipcprotocol.ValidationError{
+			Tag:   "",
+			Error: err.Error(),
+		})
 	}
 
 	sendResult(ipcprotocol.Response{
 		Type:             ipcprotocol.ResponseTypeValidation,
 		ValidationErrors: validationErrors,
-		Error:            strings.Join(parts, "; "),
 	})
 
 	// Store valid configs for subsequent test requests

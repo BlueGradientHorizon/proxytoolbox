@@ -99,14 +99,19 @@ func (rc *RawConfig) ToCore() (*core.OutboundConfig, error) {
 	return cfg, nil
 }
 
+type ValidationError struct {
+	Tag   string `json:"tag"`
+	Error string `json:"error"`
+}
+
 // Response is streamed back to the library (one JSON value per line).
 type Response struct {
-	Type             ResponseType   `json:"type"`
-	ValidationErrors map[string]int `json:"validation_errors,omitempty"`
-	Tag              string         `json:"tag,omitempty"`
-	Error            string         `json:"error,omitempty"`
-	LatencyMs        int32          `json:"latency_ms,omitempty"`
-	Speed            float64        `json:"speed,omitempty"`
+	Type             ResponseType      `json:"type"`
+	ValidationErrors []ValidationError `json:"validation_errors,omitempty"`
+	Tag              string            `json:"tag,omitempty"`
+	Error            string            `json:"error,omitempty"`
+	LatencyMs        int32             `json:"latency_ms,omitempty"`
+	Speed            float64           `json:"speed,omitempty"`
 }
 
 type CoreInfo struct {

@@ -68,7 +68,7 @@ func (tr *TestRunner) RunLatencyTests(ctx context.Context, configs []parsers.Pro
 		progressCb,
 		func(r testers.LatencyTestResult) bool { return r.Error == nil && r.Delay > 0 },
 		func(r testers.LatencyTestResult) string { return r.Tag },
-		func(rs []testers.LatencyTestResult, ve map[string]int, sort bool) any {
+		func(rs []testers.LatencyTestResult, ve []ipcprotocol.ValidationError, sort bool) any {
 			return aggregateLatencyResults(rs, ve, sort)
 		},
 	)
@@ -120,7 +120,7 @@ func (tr *TestRunner) RunSpeedTests(ctx context.Context, configs []parsers.Proxy
 		progressCb,
 		func(r testers.SpeedTestResult) bool { return r.Error == nil && r.Speed > 0 },
 		func(r testers.SpeedTestResult) string { return r.Tag },
-		func(rs []testers.SpeedTestResult, ve map[string]int, sort bool) any {
+		func(rs []testers.SpeedTestResult, ve []ipcprotocol.ValidationError, sort bool) any {
 			return aggregateSpeedResults(rs, ve, sort)
 		},
 	)
@@ -134,19 +134,19 @@ func (tr *TestRunner) RunSpeedTests(ctx context.Context, configs []parsers.Proxy
 // Generic IPC test runner
 // ---------------------------------------------------------------------
 
-func runIPCTests[TResult any, TConfig testSettings](
+func runIPCTests[TResult any, TSettings testSettings](
 	tr *TestRunner,
 	ctx context.Context,
 	configs []parsers.ProxyConfig,
-	config TConfig,
-	buildTestReq func([]parsers.ProxyConfig, TConfig) ipcprotocol.Request,
+	settings TSettings,
+	buildTestReq func([]parsers.ProxyConfig, TSettings) ipcprotocol.Request,
 	convert func(ipcprotocol.Response) TResult,
 	onProgress func(TResult),
 	isSuccess func(TResult) bool,
 	getTag func(TResult) string,
-	aggregate func([]TResult, map[string]int, bool) any,
+	aggregate func([]TResult, []ipcprotocol.ValidationError, bool) any,
 ) (any, error) {
-	base := config.getBaseSettings()
+	base := settings.getBaseSettings()
 
 	for i := range configs {
 		configs[i].Config.Tag = fmt.Sprintf("outbound-%d", i)
@@ -159,7 +159,7 @@ func runIPCTests[TResult any, TConfig testSettings](
 	defer proc.Close()
 
 	// --- Validation phase ---
-	var validationErrors map[string]int
+	var validationErrors []ipcprotocol.ValidationError
 
 	validateReq := ipcprotocol.Request{
 		Type:    ipcprotocol.RequestTypeValidate,
@@ -194,7 +194,7 @@ func runIPCTests[TResult any, TConfig testSettings](
 			base.RoundStartedCallback(round, len(currentConfigs))
 		}
 
-		req := buildTestReq(currentConfigs, config)
+		req := buildTestReq(currentConfigs, settings)
 		var roundResults []TResult
 
 		err := proc.SendRequest(ctx, req, func(r ipcprotocol.Response) {
@@ -305,7 +305,7 @@ func sortTestResults[T any](results []T, isSuccess func(T) bool, shouldSwap func
 	}
 }
 
-func aggregateLatencyResults(results []testers.LatencyTestResult, validationErrors map[string]int, sortResults bool) *LatencyTestResults {
+func aggregateLatencyResults(results []testers.LatencyTestResult, validationErrors []ipcprotocol.ValidationError, sortResults bool) *LatencyTestResults {
 	successCount := 0
 	failureCount := 0
 	for _, r := range results {
@@ -329,7 +329,7 @@ func aggregateLatencyResults(results []testers.LatencyTestResult, validationErro
 	}
 }
 
-func aggregateSpeedResults(results []testers.SpeedTestResult, validationErrors map[string]int, sortResults bool) *SpeedTestResults {
+func aggregateSpeedResults(results []testers.SpeedTestResult, validationErrors []ipcprotocol.ValidationError, sortResults bool) *SpeedTestResults {
 	successCount := 0
 	failureCount := 0
 	for _, r := range results {

@@ -3,6 +3,7 @@ package testrunner
 import (
 	"time"
 
+	"github.com/bluegradienthorizon/proxytoolbox/pkg/ipcprotocol"
 	"github.com/bluegradienthorizon/proxytoolbox/testers"
 )
 
@@ -32,7 +33,7 @@ type BaseTestRunnerSettings struct {
 	// CoreCreatedCallback is called after core creation with validation errors
 	// It allows initialization of progress tracking with accurate totals
 	// Optional: can be nil if not needed
-	CoreCreatedCallback func(validationErrors map[string]int)
+	CoreCreatedCallback func(validationErrors []ipcprotocol.ValidationError)
 
 	// RoundStartedCallback is called at the start of each test round
 	// It receives the current round number (0-indexed)

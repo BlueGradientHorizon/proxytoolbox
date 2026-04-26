@@ -1,6 +1,7 @@
 package testrunner
 
 import (
+	"github.com/bluegradienthorizon/proxytoolbox/pkg/ipcprotocol"
 	"github.com/bluegradienthorizon/proxytoolbox/testers"
 )
 
@@ -12,9 +13,9 @@ type BaseTestResults struct {
 	// FailureCount is the number of failed tests
 	FailureCount int
 
-	// ValidationErrors maps error messages to occurrence counts
+	// ValidationErrors is a list of tag-error pairs for failed configurations
 	// Collected during configuration validation before testing begins
-	ValidationErrors map[string]int
+	ValidationErrors []ipcprotocol.ValidationError
 }
 
 // LatencyTestResults contains aggregated results from latency testing.

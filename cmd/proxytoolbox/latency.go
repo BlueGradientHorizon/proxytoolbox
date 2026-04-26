@@ -7,6 +7,7 @@ import (
 
 	"github.com/bluegradienthorizon/proxytoolbox/cmd/proxytoolbox/utils"
 	"github.com/bluegradienthorizon/proxytoolbox/parsers"
+	"github.com/bluegradienthorizon/proxytoolbox/pkg/ipcprotocol"
 	"github.com/bluegradienthorizon/proxytoolbox/testers"
 	"github.com/bluegradienthorizon/proxytoolbox/testrunner"
 )
@@ -35,10 +36,10 @@ func runLatencyTest(ctx context.Context, configs []parsers.ProxyConfig, ltSettin
 			Concurrency:  ltSettings.Concurrency,
 			Timeout:      ltSettings.Timeout,
 			Rounds:       ltSettings.Rounds,
-			CoreCreatedCallback: func(validationErrors map[string]int) {
+			CoreCreatedCallback: func(validationErrors []ipcprotocol.ValidationError) {
 				println("validation errors:")
-				for err, count := range validationErrors {
-					fmt.Println(count, "x", err)
+				for _, errPair := range validationErrors {
+					fmt.Printf("[%s] %s\n", errPair.Tag, errPair.Error)
 				}
 			},
 			RoundStartedCallback: func(round int, outboundsLen int) {
