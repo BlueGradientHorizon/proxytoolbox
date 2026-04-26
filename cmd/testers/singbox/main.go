@@ -111,9 +111,9 @@ func (t *sbTester) TestLatency(ctx context.Context, settings ipcprotocol.Latency
 	}
 
 	if err := instance.Start(); err != nil {
+		instance.Close()
 		return err
 	}
-	defer instance.Close()
 
 	sbOuts := instance.Outbound().Outbounds()
 	proxies := make([]testers.ProxyInfo, 0, len(sbOuts))
@@ -134,6 +134,7 @@ func (t *sbTester) TestLatency(ctx context.Context, settings ipcprotocol.Latency
 		Timeout: timeout,
 	}, proxies, dialers, CreateTLSConfigProvider())
 	if err != nil {
+		instance.Close()
 		return err
 	}
 
@@ -148,6 +149,9 @@ func (t *sbTester) TestLatency(ctx context.Context, settings ipcprotocol.Latency
 		sendResult(resp)
 	}
 	wait()
+
+	// Close asynchronously so the "done" response isn't delayed by teardown.
+	go instance.Close()
 	return nil
 }
 
@@ -178,6 +182,7 @@ func (t *sbTester) TestSpeed(ctx context.Context, settings ipcprotocol.SpeedSett
 	}
 
 	if err := instance.Start(); err != nil {
+		instance.Close()
 		return err
 	}
 	defer instance.Close()
@@ -209,6 +214,7 @@ func (t *sbTester) TestSpeed(ctx context.Context, settings ipcprotocol.SpeedSett
 	}
 	st, err := testers.NewSpeedTest(ctx, stSettings, proxies, dialers, CreateTLSConfigProvider())
 	if err != nil {
+		instance.Close()
 		return err
 	}
 
@@ -223,6 +229,9 @@ func (t *sbTester) TestSpeed(ctx context.Context, settings ipcprotocol.SpeedSett
 		sendResult(resp)
 	}
 	wait()
+
+	// Close asynchronously so the "done" response isn't delayed by teardown.
+	go instance.Close()
 	return nil
 }
 
