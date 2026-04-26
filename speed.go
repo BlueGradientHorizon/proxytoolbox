@@ -10,8 +10,8 @@ import (
 	"github.com/bluegradienthorizon/proxytoolbox/testrunner"
 )
 
-// SpeedTestParams holds configuration for speed tests
-type SpeedTestParams struct {
+// SpeedTestSettings holds configuration for speed tests
+type SpeedTestSettings struct {
 	Concurrency int
 	Rounds      int
 	Timeout     time.Duration
@@ -20,31 +20,31 @@ type SpeedTestParams struct {
 	TargetBytes int64
 }
 
-func runSpeedTest(ctx context.Context, profiles []parsers.ProxyProfile, params SpeedTestParams, runnerConfig testrunner.TestRunnerConfig) ([]testers.SpeedTestResult, []parsers.ProxyProfile, error) {
-	// Limit profiles based on test limit
-	if len(profiles) > params.TestLimit {
-		profiles = profiles[:params.TestLimit]
+func runSpeedTest(ctx context.Context, configs []parsers.ProxyConfig, stSettings SpeedTestSettings, testerSettings testrunner.TesterSettings) ([]testers.SpeedTestResult, []parsers.ProxyConfig, error) {
+	// Limit configs based on test limit
+	if len(configs) > stSettings.TestLimit {
+		configs = configs[:stSettings.TestLimit]
 	}
 
-	runner, err := testrunner.NewTestRunner(runnerConfig)
+	runner, err := testrunner.NewTestRunner(testerSettings)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create test runner: %w", err)
 	}
 	defer runner.Close()
 
-	config := testrunner.SpeedTestRunnerConfig{
-		BaseTestRunnerConfig: testrunner.BaseTestRunnerConfig{
+	config := testrunner.SpeedTestRunnerSettings{
+		BaseTestRunnerSettings: testrunner.BaseTestRunnerSettings{
 			SortResults:  true,
 			FilterFailed: true,
-			Concurrency:  params.Concurrency,
-			Rounds:       params.Rounds,
-			Timeout:      params.Timeout,
+			Concurrency:  stSettings.Concurrency,
+			Rounds:       stSettings.Rounds,
+			Timeout:      stSettings.Timeout,
 			RoundStartedCallback: func(round, outboundsLen int) {
-				println(fmt.Sprintf("round %d/%d", round+1, params.Rounds))
+				println(fmt.Sprintf("round %d/%d", round+1, stSettings.Rounds))
 			},
 			ProgressCallback: func(result testers.SpeedTestResult) {
 				var t string
-				if params.Mode == testers.Download {
+				if stSettings.Mode == testers.Download {
 					t = "download"
 				} else {
 					t = "upload"
@@ -59,15 +59,15 @@ func runSpeedTest(ctx context.Context, profiles []parsers.ProxyProfile, params S
 
 			},
 		},
-		TargetBytes: params.TargetBytes,
-		Mode:        params.Mode,
+		TargetBytes: stSettings.TargetBytes,
+		Mode:        stSettings.Mode,
 		Provider:    testers.CloudflareProvider,
 	}
 
-	results, err := runner.RunSpeedTests(ctx, profiles, config)
+	results, err := runner.RunSpeedTests(ctx, configs, config)
 	if err != nil {
 		return nil, nil, fmt.Errorf("speed test failed: %w", err)
 	}
 
-	return results.Results, profiles, nil
+	return results.Results, configs, nil
 }

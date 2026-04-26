@@ -1,6 +1,6 @@
 # Description
 
-This is a Go library project called `proxytoolbox`. It's main purpose is to mass-scan VPN profiles to filter out non-working. But it also have a feature to perform download and upload tests.
+This is a Go library project called `proxytoolbox`. It's main purpose is to mass-scan VPN configs to filter out non-working. But it also have a feature to perform download and upload tests.
 
 # Project structure
 

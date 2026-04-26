@@ -11,15 +11,15 @@ import (
 
 type ShadowsocksParser struct{}
 
-func (p ShadowsocksParser) ParseProfile(connURI string) (*ProxyProfile, error) {
+func (p ShadowsocksParser) ParseConfig(connURI string) (*ProxyConfig, error) {
 	connURI, err := utils.TryFixURI(connURI)
 	if err != nil {
-		return nil, errors.New("ShadowsocksParser.ParseProfile: " + err.Error())
+		return nil, errors.New("ShadowsocksParser.ParseConfig: " + err.Error())
 	}
 
 	uri, addr, port, err := extractCommonURIData(connURI, "shadowsocks")
 	if err != nil {
-		return nil, errors.New("ShadowsocksParser.ParseProfile: " + err.Error())
+		return nil, errors.New("ShadowsocksParser.ParseConfig: " + err.Error())
 	}
 
 	decodedHostBytes, err := base64.StdEncoding.DecodeString(uri.Host)
@@ -27,7 +27,7 @@ func (p ShadowsocksParser) ParseProfile(connURI string) (*ProxyProfile, error) {
 		decodedHost := string(decodedHostBytes)
 		uri, addr, port, err = extractCommonURIData("ss://"+decodedHost+"#"+uri.RawFragment, "shadowsocks")
 		if err != nil {
-			return nil, errors.New("ShadowsocksParser.ParseProfile: " + err.Error())
+			return nil, errors.New("ShadowsocksParser.ParseConfig: " + err.Error())
 		}
 	}
 
@@ -46,7 +46,7 @@ func (p ShadowsocksParser) ParseProfile(connURI string) (*ProxyProfile, error) {
 			if strings.Count(decodedAuth, ":") > 0 {
 				method, password, _ = strings.Cut(decodedAuth, ":")
 			} else {
-				return nil, errors.New("ShadowsocksParser.ParseProfile: malformed base64 encoded user:pass tuple")
+				return nil, errors.New("ShadowsocksParser.ParseConfig: malformed base64 encoded user:pass tuple")
 			}
 		}
 	}
@@ -74,7 +74,7 @@ func (p ShadowsocksParser) ParseProfile(connURI string) (*ProxyProfile, error) {
 		},
 	}
 
-	return &ProxyProfile{
+	return &ProxyConfig{
 		Config:  config,
 		ConnURI: connURI,
 	}, nil

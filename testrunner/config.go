@@ -6,8 +6,8 @@ import (
 	"github.com/bluegradienthorizon/proxytoolbox/testers"
 )
 
-// TestRunnerConfig configures test runner behavior and tester path.
-type TestRunnerConfig struct {
+// TesterSettings configures test runner behavior and tester path.
+type TesterSettings struct {
 	// TesterPath is the absolute path to the tester binary.
 	TesterPath string
 
@@ -15,8 +15,8 @@ type TestRunnerConfig struct {
 	TesterDebug bool
 }
 
-// BaseTestRunnerConfig contains common configuration fields shared by all test types.
-type BaseTestRunnerConfig struct {
+// BaseTestRunnerSettings contains common configuration fields shared by all test types.
+type BaseTestRunnerSettings struct {
 	// Timeout for individual tests
 	// If a test doesn't complete within this duration, it's marked as failed
 	Timeout time.Duration
@@ -57,18 +57,18 @@ type BaseTestRunnerConfig struct {
 	SortResults bool
 }
 
-// LatencyTestRunnerConfig configures latency test execution parameters.
-type LatencyTestRunnerConfig struct {
-	BaseTestRunnerConfig
+// LatencyTestRunnerSettings configures latency test execution parameters.
+type LatencyTestRunnerSettings struct {
+	BaseTestRunnerSettings
 
 	// TestURL specifies the URL to test latency against
 	// Common values: testers.Google204, testers.Cloudflare, custom URLs
 	TestURL string
 }
 
-// SpeedTestRunnerConfig configures speed test execution parameters.
-type SpeedTestRunnerConfig struct {
-	BaseTestRunnerConfig
+// SpeedTestRunnerSettings configures speed test execution parameters.
+type SpeedTestRunnerSettings struct {
+	BaseTestRunnerSettings
 
 	// TargetBytes specifies how many bytes to transfer during the test
 	// Larger values provide more accurate measurements but take longer

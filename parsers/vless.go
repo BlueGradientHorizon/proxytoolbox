@@ -9,15 +9,15 @@ import (
 
 type VLESSParser struct{}
 
-func (p VLESSParser) ParseProfile(connURI string) (*ProxyProfile, error) {
+func (p VLESSParser) ParseConfig(connURI string) (*ProxyConfig, error) {
 	connURI, err := utils.TryFixURI(connURI)
 	if err != nil {
-		return nil, errors.New("VLESSParser.ParseProfile: " + err.Error())
+		return nil, errors.New("VLESSParser.ParseConfig: " + err.Error())
 	}
 
 	uri, addr, port, err := extractCommonURIData(connURI, "vless")
 	if err != nil {
-		return nil, errors.New("VLESSParser.ParseProfile: " + err.Error())
+		return nil, errors.New("VLESSParser.ParseConfig: " + err.Error())
 	}
 
 	params := uri.Query()
@@ -29,12 +29,12 @@ func (p VLESSParser) ParseProfile(connURI string) (*ProxyProfile, error) {
 
 	TLSOptions, err := buildOutboundTLSOptions(params, "vless")
 	if err != nil {
-		return nil, errors.New("VLESSParser.ParseProfile: " + err.Error())
+		return nil, errors.New("VLESSParser.ParseConfig: " + err.Error())
 	}
 
 	transportOptions, err := buildV2RayTransportOptions(params, "vless")
 	if err != nil {
-		return nil, errors.New("VLESSParser.ParseProfile: " + err.Error())
+		return nil, errors.New("VLESSParser.ParseConfig: " + err.Error())
 	}
 
 	// Create generic OutboundConfig with VLESS settings
@@ -50,7 +50,7 @@ func (p VLESSParser) ParseProfile(connURI string) (*ProxyProfile, error) {
 		Transport: transportOptions,
 	}
 
-	return &ProxyProfile{
+	return &ProxyConfig{
 		Config:  config,
 		ConnURI: connURI,
 	}, nil

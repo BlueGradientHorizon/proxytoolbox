@@ -9,15 +9,15 @@ import (
 
 type TrojanParser struct{}
 
-func (p TrojanParser) ParseProfile(connURI string) (*ProxyProfile, error) {
+func (p TrojanParser) ParseConfig(connURI string) (*ProxyConfig, error) {
 	connURI, err := utils.TryFixURI(connURI)
 	if err != nil {
-		return nil, errors.New("TrojanParser.ParseProfile: " + err.Error())
+		return nil, errors.New("TrojanParser.ParseConfig: " + err.Error())
 	}
 
 	url, addr, port, err := extractCommonURIData(connURI, "trojan")
 	if err != nil {
-		return nil, errors.New("TrojanParser.ParseProfile: " + err.Error())
+		return nil, errors.New("TrojanParser.ParseConfig: " + err.Error())
 	}
 
 	params := url.Query()
@@ -26,12 +26,12 @@ func (p TrojanParser) ParseProfile(connURI string) (*ProxyProfile, error) {
 
 	TLSOptions, err := buildOutboundTLSOptions(params, "trojan")
 	if err != nil {
-		return nil, errors.New("TrojanParser.ParseProfile: " + err.Error())
+		return nil, errors.New("TrojanParser.ParseConfig: " + err.Error())
 	}
 
 	transportOptions, err := buildV2RayTransportOptions(params, "trojan")
 	if err != nil {
-		return nil, errors.New("TrojanParser.ParseProfile: " + err.Error())
+		return nil, errors.New("TrojanParser.ParseConfig: " + err.Error())
 	}
 
 	// Create generic OutboundConfig with Trojan settings
@@ -46,7 +46,7 @@ func (p TrojanParser) ParseProfile(connURI string) (*ProxyProfile, error) {
 		Transport: transportOptions,
 	}
 
-	return &ProxyProfile{
+	return &ProxyConfig{
 		Config:  config,
 		ConnURI: connURI,
 	}, nil

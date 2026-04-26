@@ -11,14 +11,14 @@ import (
 	"github.com/bluegradienthorizon/proxytoolbox/testrunner"
 )
 
-type LatencyTestParams struct {
+type LatencyTestSettings struct {
 	Concurrency int
 	Timeout     time.Duration
 	Rounds      int
 }
 
-func runLatencyTest(ctx context.Context, profiles []parsers.ProxyProfile, params LatencyTestParams, runnerConfig testrunner.TestRunnerConfig) ([]testers.LatencyTestResult, []parsers.ProxyProfile, error) {
-	runner, err := testrunner.NewTestRunner(runnerConfig)
+func runLatencyTest(ctx context.Context, configs []parsers.ProxyConfig, ltSettings LatencyTestSettings, testerSettings testrunner.TesterSettings) ([]testers.LatencyTestResult, []parsers.ProxyConfig, error) {
+	runner, err := testrunner.NewTestRunner(testerSettings)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create test runner: %w", err)
 	}
@@ -28,13 +28,13 @@ func runLatencyTest(ctx context.Context, profiles []parsers.ProxyProfile, params
 	var printer *printers.StatsPrinter
 	var printDone chan bool
 
-	config := testrunner.LatencyTestRunnerConfig{
-		BaseTestRunnerConfig: testrunner.BaseTestRunnerConfig{
+	config := testrunner.LatencyTestRunnerSettings{
+		BaseTestRunnerSettings: testrunner.BaseTestRunnerSettings{
 			SortResults:  true,
 			FilterFailed: true,
-			Concurrency:  params.Concurrency,
-			Timeout:      params.Timeout,
-			Rounds:       params.Rounds,
+			Concurrency:  ltSettings.Concurrency,
+			Timeout:      ltSettings.Timeout,
+			Rounds:       ltSettings.Rounds,
 			CoreCreatedCallback: func(validationErrors map[string]int) {
 				println("validation errors:")
 				for err, count := range validationErrors {
@@ -42,7 +42,7 @@ func runLatencyTest(ctx context.Context, profiles []parsers.ProxyProfile, params
 				}
 			},
 			RoundStartedCallback: func(round int, outboundsLen int) {
-				println(fmt.Sprintf("round %d/%d", round+1, params.Rounds))
+				println(fmt.Sprintf("round %d/%d", round+1, ltSettings.Rounds))
 				printerChan = make(chan testers.LatencyTestResult, outboundsLen)
 				printer = printers.NewStatsPrinter(outboundsLen, printerChan)
 				printDone = make(chan bool)
@@ -59,23 +59,23 @@ func runLatencyTest(ctx context.Context, profiles []parsers.ProxyProfile, params
 		TestURL: testers.Google204,
 	}
 
-	testResults, err := runner.RunLatencyTests(ctx, profiles, config)
+	testResults, err := runner.RunLatencyTests(ctx, configs, config)
 	if err != nil {
 		return nil, nil, fmt.Errorf("latency tests failed: %w", err)
 	}
 
-	// Filter profiles to match successful results
-	validProfiles := make([]parsers.ProxyProfile, 0, len(testResults.Results))
+	// Filter configs to match successful results
+	validConfigs := make([]parsers.ProxyConfig, 0, len(testResults.Results))
 	for _, result := range testResults.Results {
 		if result.Error == nil {
-			for _, p := range profiles {
+			for _, p := range configs {
 				if p.Config != nil && p.Config.Tag == result.Tag {
-					validProfiles = append(validProfiles, p)
+					validConfigs = append(validConfigs, p)
 					break
 				}
 			}
 		}
 	}
 
-	return testResults.Results, validProfiles, nil
+	return testResults.Results, validConfigs, nil
 }

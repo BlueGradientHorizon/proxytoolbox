@@ -9,15 +9,15 @@ import (
 
 type Hysteria2Parser struct{}
 
-func (p Hysteria2Parser) ParseProfile(connURI string) (*ProxyProfile, error) {
+func (p Hysteria2Parser) ParseConfig(connURI string) (*ProxyConfig, error) {
 	connURI, err := utils.TryFixURI(connURI)
 	if err != nil {
-		return nil, errors.New("Hysteria2Parser.ParseProfile: " + err.Error())
+		return nil, errors.New("Hysteria2Parser.ParseConfig: " + err.Error())
 	}
 
 	uri, addr, port, err := extractCommonURIData(connURI, "hysteria2")
 	if err != nil {
-		return nil, errors.New("Hysteria2Parser.ParseProfile: " + err.Error())
+		return nil, errors.New("Hysteria2Parser.ParseConfig: " + err.Error())
 	}
 
 	params := uri.Query()
@@ -61,7 +61,7 @@ func (p Hysteria2Parser) ParseProfile(connURI string) (*ProxyProfile, error) {
 		TLS:      tlsConfig,
 	}
 
-	return &ProxyProfile{
+	return &ProxyConfig{
 		Config:  config,
 		ConnURI: connURI,
 	}, nil

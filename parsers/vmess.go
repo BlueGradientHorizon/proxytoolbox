@@ -14,7 +14,7 @@ import (
 
 type VMessParser struct{}
 
-func (p VMessParser) ParseProfile(connURI string) (*ProxyProfile, error) {
+func (p VMessParser) ParseConfig(connURI string) (*ProxyConfig, error) {
 	base64Part := strings.ReplaceAll(connURI, "vmess://", "")
 
 	var enc *base64.Encoding
@@ -34,12 +34,12 @@ func (p VMessParser) ParseProfile(connURI string) (*ProxyProfile, error) {
 
 	decodedBytes, err := enc.DecodeString(base64Part)
 	if err != nil {
-		return nil, errors.New("VMessParser.ParseProfile: " + err.Error())
+		return nil, errors.New("VMessParser.ParseConfig: " + err.Error())
 	}
 
 	var tempMap map[string]any
 	if err := json.Unmarshal(decodedBytes, &tempMap); err != nil {
-		return nil, errors.New("VMessParser.ParseProfile: " + err.Error())
+		return nil, errors.New("VMessParser.ParseConfig: " + err.Error())
 	}
 
 	query := map[string]string{}
@@ -59,7 +59,7 @@ func (p VMessParser) ParseProfile(connURI string) (*ProxyProfile, error) {
 	addr := params.Get("add")
 	portUnchecked, err := strconv.ParseUint(params.Get("port"), 10, 16)
 	if err != nil {
-		return nil, errors.New("VMessParser.ParseProfile: " + err.Error())
+		return nil, errors.New("VMessParser.ParseConfig: " + err.Error())
 	}
 	port := uint16(portUnchecked)
 	// remark := params.Get("ps")
@@ -68,12 +68,12 @@ func (p VMessParser) ParseProfile(connURI string) (*ProxyProfile, error) {
 
 	TLSOptions, err := buildOutboundTLSOptions(params, "vmess")
 	if err != nil {
-		return nil, errors.New("VMessParser.ParseProfile: " + err.Error())
+		return nil, errors.New("VMessParser.ParseConfig: " + err.Error())
 	}
 
 	transportOptions, err := buildV2RayTransportOptions(params, "vmess")
 	if err != nil {
-		return nil, errors.New("VMessParser.ParseProfile: " + err.Error())
+		return nil, errors.New("VMessParser.ParseConfig: " + err.Error())
 	}
 
 	config := &core.OutboundConfig{
@@ -89,7 +89,7 @@ func (p VMessParser) ParseProfile(connURI string) (*ProxyProfile, error) {
 		Transport: transportOptions,
 	}
 
-	return &ProxyProfile{
+	return &ProxyConfig{
 		Config:  config,
 		ConnURI: connURI,
 	}, nil

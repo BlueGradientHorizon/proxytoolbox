@@ -15,37 +15,36 @@ import (
 type TestRunner struct {
 	testerPath  string
 	testerDebug bool
-	autoCleanup bool
 }
 
 // NewTestRunner creates a new test runner with the specified configuration.
-func NewTestRunner(config TestRunnerConfig) (*TestRunner, error) {
-	if config.TesterPath == "" {
+func NewTestRunner(testerSettings TesterSettings) (*TestRunner, error) {
+	if testerSettings.TesterPath == "" {
 		return nil, fmt.Errorf("tester path is required")
 	}
-	return &TestRunner{testerPath: config.TesterPath, testerDebug: config.TesterDebug}, nil
+	return &TestRunner{testerPath: testerSettings.TesterPath, testerDebug: testerSettings.TesterDebug}, nil
 }
 
 // Close cleans up resources used by the test runner.
 func (tr *TestRunner) Close() error { return nil }
 
 // RunLatencyTests executes latency tests with automatic lifecycle management.
-func (tr *TestRunner) RunLatencyTests(ctx context.Context, profiles []parsers.ProxyProfile, config LatencyTestRunnerConfig) (*LatencyTestResults, error) {
-	base := config.getBaseConfig()
+func (tr *TestRunner) RunLatencyTests(ctx context.Context, configs []parsers.ProxyConfig, ltRunnerSettings LatencyTestRunnerSettings) (*LatencyTestResults, error) {
+	base := ltRunnerSettings.getBaseSettings()
 	var progressCb func(testers.LatencyTestResult)
 	if base.ProgressCallback != nil {
 		progressCb, _ = base.ProgressCallback.(func(testers.LatencyTestResult))
 	}
 
 	res, err := runIPCTests(
-		tr, ctx, profiles, &config,
-		func(currentProfiles []parsers.ProxyProfile, c *LatencyTestRunnerConfig) ipcprotocol.Request {
+		tr, ctx, configs, &ltRunnerSettings,
+		func(currentConfigs []parsers.ProxyConfig, c *LatencyTestRunnerSettings) ipcprotocol.Request {
 			testURL := c.TestURL
 			if testURL == "" {
 				testURL = testers.Google204
 			}
-			tags := make([]string, len(currentProfiles))
-			for i, p := range currentProfiles {
+			tags := make([]string, len(currentConfigs))
+			for i, p := range currentConfigs {
 				tags[i] = p.Config.Tag
 			}
 			return ipcprotocol.Request{
@@ -80,23 +79,23 @@ func (tr *TestRunner) RunLatencyTests(ctx context.Context, profiles []parsers.Pr
 }
 
 // RunSpeedTests executes speed tests with automatic lifecycle management.
-func (tr *TestRunner) RunSpeedTests(ctx context.Context, profiles []parsers.ProxyProfile, config SpeedTestRunnerConfig) (*SpeedTestResults, error) {
-	base := config.getBaseConfig()
+func (tr *TestRunner) RunSpeedTests(ctx context.Context, configs []parsers.ProxyConfig, stRunnerSettings SpeedTestRunnerSettings) (*SpeedTestResults, error) {
+	base := stRunnerSettings.getBaseSettings()
 	var progressCb func(testers.SpeedTestResult)
 	if base.ProgressCallback != nil {
 		progressCb, _ = base.ProgressCallback.(func(testers.SpeedTestResult))
 	}
 
 	mode := "download"
-	if config.Mode == testers.Upload {
+	if stRunnerSettings.Mode == testers.Upload {
 		mode = "upload"
 	}
 
 	res, err := runIPCTests(
-		tr, ctx, profiles, &config,
-		func(currentProfiles []parsers.ProxyProfile, c *SpeedTestRunnerConfig) ipcprotocol.Request {
-			tags := make([]string, len(currentProfiles))
-			for i, p := range currentProfiles {
+		tr, ctx, configs, &stRunnerSettings,
+		func(currentConfigs []parsers.ProxyConfig, c *SpeedTestRunnerSettings) ipcprotocol.Request {
+			tags := make([]string, len(currentConfigs))
+			for i, p := range currentConfigs {
 				tags[i] = p.Config.Tag
 			}
 			return ipcprotocol.Request{
@@ -135,22 +134,22 @@ func (tr *TestRunner) RunSpeedTests(ctx context.Context, profiles []parsers.Prox
 // Generic IPC test runner
 // ---------------------------------------------------------------------
 
-func runIPCTests[TResult any, TConfig testConfig](
+func runIPCTests[TResult any, TConfig testSettings](
 	tr *TestRunner,
 	ctx context.Context,
-	profiles []parsers.ProxyProfile,
+	configs []parsers.ProxyConfig,
 	config TConfig,
-	buildTestReq func([]parsers.ProxyProfile, TConfig) ipcprotocol.Request,
+	buildTestReq func([]parsers.ProxyConfig, TConfig) ipcprotocol.Request,
 	convert func(ipcprotocol.Response) TResult,
 	onProgress func(TResult),
 	isSuccess func(TResult) bool,
 	getTag func(TResult) string,
 	aggregate func([]TResult, map[string]int, bool) any,
 ) (any, error) {
-	base := config.getBaseConfig()
+	base := config.getBaseSettings()
 
-	for i := range profiles {
-		profiles[i].Config.Tag = fmt.Sprintf("outbound-%d", i)
+	for i := range configs {
+		configs[i].Config.Tag = fmt.Sprintf("outbound-%d", i)
 	}
 
 	proc := &TesterProcess{path: tr.testerPath, debug: tr.testerDebug}
@@ -164,7 +163,7 @@ func runIPCTests[TResult any, TConfig testConfig](
 
 	validateReq := ipcprotocol.Request{
 		Type:    ipcprotocol.RequestTypeValidate,
-		Configs: toRawConfigs(extractConfigs(profiles)),
+		Configs: toRawConfigs(extractConfigs(configs)),
 	}
 
 	err := proc.SendRequest(ctx, validateReq, func(r ipcprotocol.Response) {
@@ -179,7 +178,7 @@ func runIPCTests[TResult any, TConfig testConfig](
 		return nil, fmt.Errorf("validation: %w", err)
 	}
 
-	currentProfiles := profiles
+	currentConfigs := configs
 
 	// --- Test phase ---
 	var final []TResult
@@ -192,10 +191,10 @@ func runIPCTests[TResult any, TConfig testConfig](
 		}
 
 		if base.RoundStartedCallback != nil {
-			base.RoundStartedCallback(round, len(currentProfiles))
+			base.RoundStartedCallback(round, len(currentConfigs))
 		}
 
-		req := buildTestReq(currentProfiles, config)
+		req := buildTestReq(currentConfigs, config)
 		var roundResults []TResult
 
 		err := proc.SendRequest(ctx, req, func(r ipcprotocol.Response) {
@@ -229,13 +228,13 @@ func runIPCTests[TResult any, TConfig testConfig](
 			if len(good) == 0 {
 				break
 			}
-			next := make([]parsers.ProxyProfile, 0, len(good))
-			for _, p := range currentProfiles {
+			next := make([]parsers.ProxyConfig, 0, len(good))
+			for _, p := range currentConfigs {
 				if good[p.Config.Tag] {
 					next = append(next, p)
 				}
 			}
-			currentProfiles = next
+			currentConfigs = next
 		}
 	}
 
@@ -246,9 +245,9 @@ func runIPCTests[TResult any, TConfig testConfig](
 // Helpers
 // ---------------------------------------------------------------------
 
-func extractConfigs(profiles []parsers.ProxyProfile) []*core.OutboundConfig {
-	out := make([]*core.OutboundConfig, 0, len(profiles))
-	for _, p := range profiles {
+func extractConfigs(configs []parsers.ProxyConfig) []*core.OutboundConfig {
+	out := make([]*core.OutboundConfig, 0, len(configs))
+	for _, p := range configs {
 		if p.Config != nil {
 			out = append(out, p.Config)
 		}
@@ -273,16 +272,16 @@ func mustMarshal(v interface{}) json.RawMessage {
 	return json.RawMessage(b)
 }
 
-type testConfig interface {
-	getBaseConfig() *BaseTestRunnerConfig
+type testSettings interface {
+	getBaseSettings() *BaseTestRunnerSettings
 }
 
-func (c *LatencyTestRunnerConfig) getBaseConfig() *BaseTestRunnerConfig {
-	return &c.BaseTestRunnerConfig
+func (c *LatencyTestRunnerSettings) getBaseSettings() *BaseTestRunnerSettings {
+	return &c.BaseTestRunnerSettings
 }
 
-func (c *SpeedTestRunnerConfig) getBaseConfig() *BaseTestRunnerConfig {
-	return &c.BaseTestRunnerConfig
+func (c *SpeedTestRunnerSettings) getBaseSettings() *BaseTestRunnerSettings {
+	return &c.BaseTestRunnerSettings
 }
 
 func sortTestResults[T any](results []T, isSuccess func(T) bool, shouldSwap func(T, T) bool) {

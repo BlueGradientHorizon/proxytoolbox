@@ -8,24 +8,24 @@ import (
 	"github.com/bluegradienthorizon/proxytoolbox/core"
 )
 
-type ProxyProfile struct {
+type ProxyConfig struct {
 	Config  *core.OutboundConfig
 	ConnURI string
 }
 
-type ProfileParser interface {
-	ParseProfile(string) (*ProxyProfile, error)
+type ConfigParser interface {
+	ParseConfig(string) (*ProxyConfig, error)
 }
 
-func ParseProfile(connURI string) (*ProxyProfile, error) {
+func ParseConfig(connURI string) (*ProxyConfig, error) {
 	connURI = strings.TrimSpace(connURI)
 	if connURI == "" {
-		return nil, errors.New("ParseProfile: empty configuration URI")
+		return nil, errors.New("ParseConfig: empty configuration URI")
 	}
 
 	splitURI := strings.Split(connURI, "://")
 
-	parsers := map[string]ProfileParser{
+	parsers := map[string]ConfigParser{
 		"vless":     VLESSParser{},
 		"trojan":    TrojanParser{},
 		"vmess":     VMessParser{},
@@ -35,12 +35,12 @@ func ParseProfile(connURI string) (*ProxyProfile, error) {
 	}
 
 	if parser, ok := parsers[splitURI[0]]; ok {
-		profile, err := parser.ParseProfile(connURI)
+		config, err := parser.ParseConfig(connURI)
 		if err != nil {
-			return nil, errors.New("ParseProfile: " + err.Error())
+			return nil, errors.New("ParseConfig: " + err.Error())
 		}
-		return profile, nil
+		return config, nil
 	} else {
-		return nil, fmt.Errorf("ParseProfile: unknown profile URI scheme %s", splitURI[0])
+		return nil, fmt.Errorf("ParseConfig: unknown config URI scheme %s", splitURI[0])
 	}
 }

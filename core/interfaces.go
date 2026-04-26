@@ -31,12 +31,3 @@ type Outbound interface {
 	// NewPacketConnection creates a packet-based connection through the proxy (for UDP)
 	NewPacketConnection(ctx context.Context, conn N.PacketConn, destination metadata.Socksaddr) (N.PacketConn, error)
 }
-
-// ConfigConverter converts generic configurations to core-specific types.
-// Each proxy core (sing-box, xray, clash) implements this interface to
-// translate core-agnostic OutboundConfig into its native outbound type.
-type ConfigConverter interface {
-	// ConvertOutbound converts a generic OutboundConfig to a core-specific outbound
-	// that implements the Outbound interface
-	ConvertOutbound(config *OutboundConfig) (Outbound, error)
-}

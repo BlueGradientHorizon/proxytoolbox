@@ -23,7 +23,7 @@ func main() {
 	flag.Parse()
 
 	// Configure latency test parameters
-	latencyParams := LatencyTestParams{
+	ltSettings := LatencyTestSettings{
 		Concurrency: 0,
 		Timeout:     7 * time.Second,
 		Rounds:      3,
@@ -31,7 +31,7 @@ func main() {
 
 	runSpeedTestFlag := false // Set to true to run speed tests after latency tests
 
-	speedParams := SpeedTestParams{
+	stSettings := SpeedTestSettings{
 		Concurrency: 1,
 		Rounds:      2,
 		Timeout:     10 * time.Second,
@@ -67,32 +67,32 @@ func main() {
 
 	fmt.Printf("Attempting to load configurations from file: %s\n", outputFile)
 
-	var profiles []parsers.ProxyProfile
+	var configs []parsers.ProxyConfig
 	data, err := os.ReadFile(outputFile)
 	if err != nil {
 		fmt.Printf("File %s not found\n", outputFile)
 		return
 	}
 
-	var profilesConnUris []string
+	var configsConnUris []string
 
 	content := strings.TrimSpace(string(data))
 	for _, line := range strings.Split(content, "\n") {
-		profilesConnUris = append(profilesConnUris, line)
+		configsConnUris = append(configsConnUris, line)
 	}
 
-	fmt.Println("before dedup:", len(profilesConnUris))
-	profilesConnUris = utils.DeduplicateConnUris(profilesConnUris)
-	fmt.Println("after dedup:", len(profilesConnUris))
+	fmt.Println("before dedup:", len(configsConnUris))
+	configsConnUris = utils.DeduplicateConnUris(configsConnUris)
+	fmt.Println("after dedup:", len(configsConnUris))
 
 	parsingErrorsMap := make(map[string]int)
-	for _, connUri := range profilesConnUris {
-		p, err := parsers.ParseProfile(connUri)
+	for _, connUri := range configsConnUris {
+		p, err := parsers.ParseConfig(connUri)
 		if err != nil {
 			parsingErrorsMap[err.Error()]++
 			continue
 		}
-		profiles = append(profiles, *p)
+		configs = append(configs, *p)
 	}
 
 	println("parsing errors:")
@@ -103,19 +103,19 @@ func main() {
 	}
 	println("parsing errors total:", parsingErrors)
 
-	if len(profiles) == 0 {
+	if len(configs) == 0 {
 		fmt.Println("! No valid configurations were loaded. Check your source or subscription content.")
 		return
 	}
 
 	ctx := context.Background()
 
-	ltRunnerConfig := testrunner.TestRunnerConfig{
+	ltTesterSettings := testrunner.TesterSettings{
 		TesterPath:  testerPath,
 		TesterDebug: testerDebug,
 	}
 
-	latencyResults, taggedProfiles, ltErr := runLatencyTest(ctx, profiles, latencyParams, ltRunnerConfig)
+	latencyResults, taggedConfigs, ltErr := runLatencyTest(ctx, configs, ltSettings, ltTesterSettings)
 	if ltErr != nil {
 		fmt.Printf("Latency test error: %v\n", ltErr)
 		os.Exit(-1)
@@ -127,9 +127,9 @@ func main() {
 	}
 
 	// Write results to file
-	writeResultsToFile(latencyResults, taggedProfiles)
+	writeResultsToFile(latencyResults, taggedConfigs)
 
-	stRunnerConfig := testrunner.TestRunnerConfig{
+	stTesterSettings := testrunner.TesterSettings{
 		TesterPath:  testerPath,
 		TesterDebug: testerDebug,
 	}
@@ -138,7 +138,7 @@ func main() {
 	if runSpeedTestFlag {
 		// var speedResults []testers.SpeedTestResult
 		var speedErr error
-		_, taggedProfiles, speedErr = runSpeedTest(ctx, taggedProfiles, speedParams, stRunnerConfig)
+		_, taggedConfigs, speedErr = runSpeedTest(ctx, taggedConfigs, stSettings, stTesterSettings)
 		if speedErr != nil {
 			fmt.Printf("Speed test error: %v\n", speedErr)
 		}
@@ -148,7 +148,7 @@ func main() {
 }
 
 // writeResultsToFile writes successful latency test results to out.txt
-func writeResultsToFile(sortedResults []testers.LatencyTestResult, profiles []parsers.ProxyProfile) {
+func writeResultsToFile(sortedResults []testers.LatencyTestResult, configs []parsers.ProxyConfig) {
 	success := 0
 	f, _ := os.Create("out.txt")
 	w := bufio.NewWriter(f)
@@ -157,13 +157,13 @@ func writeResultsToFile(sortedResults []testers.LatencyTestResult, profiles []pa
 	for _, r := range sortedResults {
 		if r.Error == nil {
 			success++
-			i := slices.IndexFunc(profiles, func(p parsers.ProxyProfile) bool {
+			i := slices.IndexFunc(configs, func(p parsers.ProxyConfig) bool {
 				return p.Config.Tag == r.Tag
 			})
 			if i == -1 {
 				i = 0
 			}
-			w.WriteString(profiles[i].ConnURI + "\n")
+			w.WriteString(configs[i].ConnURI + "\n")
 		}
 	}
 	w.Flush()
