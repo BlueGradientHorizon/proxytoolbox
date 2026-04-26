@@ -21,9 +21,10 @@ import (
 )
 
 type sbTester struct {
-	mu        sync.Mutex
-	configs   []*core.OutboundConfig
-	configMap map[string]*core.OutboundConfig
+	mu          sync.Mutex
+	configs     []*core.OutboundConfig
+	configMap   map[string]*core.OutboundConfig
+	outboundMap map[string]option.Outbound
 }
 
 func (t *sbTester) Info() ipcprotocol.CoreInfo {
@@ -34,7 +35,31 @@ func (t *sbTester) Info() ipcprotocol.CoreInfo {
 }
 
 func (t *sbTester) Validate(ctx context.Context, configs []*core.OutboundConfig, sendResult func(ipcprotocol.Response)) error {
-	instance, validationErrors, validConfigs, err := createInstance(ctx, configs, true)
+	adapter := NewAdapter()
+	validationErrors := make(map[string]int)
+	var validOutbounds []option.Outbound
+	var validConfigs []*core.OutboundConfig
+	outboundMap := make(map[string]option.Outbound)
+
+	for _, cfg := range configs {
+		sbOut, err := adapter.ConvertOutbound(cfg)
+		if err != nil {
+			validationErrors["convert: "+cfg.Type+": "+err.Error()]++
+			continue
+		}
+		tmp, err := newBoxInstance(ctx, []option.Outbound{*sbOut})
+		if err != nil {
+			validationErrors["instantiate: "+cfg.Type+": "+err.Error()]++
+			continue
+		}
+		tmp.Close()
+
+		validOutbounds = append(validOutbounds, *sbOut)
+		validConfigs = append(validConfigs, cfg)
+		outboundMap[cfg.Tag] = *sbOut
+	}
+
+	instance, err := newBoxInstance(ctx, validOutbounds)
 	if instance != nil {
 		instance.Close()
 	}
@@ -57,6 +82,7 @@ func (t *sbTester) Validate(ctx context.Context, configs []*core.OutboundConfig,
 	t.mu.Lock()
 	t.configs = validConfigs
 	t.configMap = make(map[string]*core.OutboundConfig, len(validConfigs))
+	t.outboundMap = outboundMap
 	for _, cfg := range validConfigs {
 		t.configMap[cfg.Tag] = cfg
 	}
@@ -65,27 +91,33 @@ func (t *sbTester) Validate(ctx context.Context, configs []*core.OutboundConfig,
 	return nil
 }
 
-func (t *sbTester) selectConfigs(tags []string) []*core.OutboundConfig {
+func (t *sbTester) selectOutbounds(tags []string) ([]*core.OutboundConfig, []option.Outbound) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
 	if len(tags) == 0 {
 		out := make([]*core.OutboundConfig, len(t.configs))
 		copy(out, t.configs)
-		return out
+		outbounds := make([]option.Outbound, 0, len(t.configs))
+		for _, cfg := range t.configs {
+			outbounds = append(outbounds, t.outboundMap[cfg.Tag])
+		}
+		return out, outbounds
 	}
 
 	out := make([]*core.OutboundConfig, 0, len(tags))
+	outbounds := make([]option.Outbound, 0, len(tags))
 	for _, tag := range tags {
 		if cfg, ok := t.configMap[tag]; ok {
 			out = append(out, cfg)
+			outbounds = append(outbounds, t.outboundMap[tag])
 		}
 	}
-	return out
+	return out, outbounds
 }
 
 func (t *sbTester) TestLatency(ctx context.Context, settings ipcprotocol.LatencySettings, tags []string, sendResult func(ipcprotocol.Response)) error {
-	configs := t.selectConfigs(tags)
+	configs, outbounds := t.selectOutbounds(tags)
 
 	// Report validation-failed for requested tags that are not present in the stored set
 	foundTags := make(map[string]struct{}, len(configs))
@@ -102,7 +134,7 @@ func (t *sbTester) TestLatency(ctx context.Context, settings ipcprotocol.Latency
 		return nil
 	}
 
-	instance, _, _, err := createInstance(ctx, configs, false)
+	instance, err := newBoxInstance(ctx, outbounds)
 	if err != nil {
 		for _, cfg := range configs {
 			sendResult(ipcprotocol.Response{Type: ipcprotocol.ResponseTypeResult, Tag: cfg.Tag, Error: err.Error()})
@@ -160,7 +192,7 @@ func (t *sbTester) TestLatency(ctx context.Context, settings ipcprotocol.Latency
 }
 
 func (t *sbTester) TestSpeed(ctx context.Context, settings ipcprotocol.SpeedSettings, tags []string, sendResult func(ipcprotocol.Response)) error {
-	configs := t.selectConfigs(tags)
+	configs, outbounds := t.selectOutbounds(tags)
 
 	// Report validation-failed for requested tags that are not present in the stored set
 	foundTags := make(map[string]struct{}, len(configs))
@@ -177,7 +209,7 @@ func (t *sbTester) TestSpeed(ctx context.Context, settings ipcprotocol.SpeedSett
 		return nil
 	}
 
-	instance, _, _, err := createInstance(ctx, configs, false)
+	instance, err := newBoxInstance(ctx, outbounds)
 	if err != nil {
 		for _, cfg := range configs {
 			sendResult(ipcprotocol.Response{Type: ipcprotocol.ResponseTypeResult, Tag: cfg.Tag, Error: err.Error()})
@@ -253,40 +285,6 @@ func newBoxInstance(ctx context.Context, outbounds []option.Outbound) (*box.Box,
 	}
 	instanceCtx := include.Context(ctx)
 	return box.New(box.Options{Context: instanceCtx, Options: opts})
-}
-
-func createInstance(ctx context.Context, configs []*core.OutboundConfig, validate bool) (*box.Box, map[string]int, []*core.OutboundConfig, error) {
-	adapter := NewAdapter()
-	validationErrors := make(map[string]int)
-	var validOutbounds []option.Outbound
-	var validConfigs []*core.OutboundConfig
-
-	for _, cfg := range configs {
-		sbOut, err := adapter.ConvertOutbound(cfg)
-		if err != nil {
-			if validate {
-				validationErrors[cfg.Type+": "+err.Error()]++
-				continue
-			}
-			return nil, nil, nil, err
-		}
-		if validate {
-			tmp, err := newBoxInstance(ctx, []option.Outbound{*sbOut})
-			if err != nil {
-				validationErrors[cfg.Type+": "+err.Error()]++
-				continue
-			}
-			tmp.Close()
-		}
-		validOutbounds = append(validOutbounds, *sbOut)
-		validConfigs = append(validConfigs, cfg)
-	}
-
-	instance, err := newBoxInstance(ctx, validOutbounds)
-	if err != nil {
-		return nil, validationErrors, validConfigs, err
-	}
-	return instance, validationErrors, validConfigs, nil
 }
 
 func main() {
