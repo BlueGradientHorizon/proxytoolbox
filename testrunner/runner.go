@@ -38,15 +38,19 @@ func (tr *TestRunner) RunLatencyTests(ctx context.Context, profiles []parsers.Pr
 
 	res, err := runIPCTests(
 		tr, ctx, profiles, &config,
-		func(configs []*core.OutboundConfig, c *LatencyTestRunnerConfig) ipcprotocol.Request {
+		func(currentProfiles []parsers.ProxyProfile, c *LatencyTestRunnerConfig) ipcprotocol.Request {
 			testURL := c.TestURL
 			if testURL == "" {
 				testURL = testers.Google204
 			}
+			tags := make([]string, len(currentProfiles))
+			for i, p := range currentProfiles {
+				tags[i] = p.Config.Tag
+			}
 			return ipcprotocol.Request{
-				Type:     "test",
+				Type:     ipcprotocol.RequestTypeTest,
 				TestType: ipcprotocol.LatencyTest,
-				Configs:  toRawConfigs(configs),
+				Tags:     tags,
 				Settings: mustMarshal(ipcprotocol.LatencySettings{
 					TimeoutMs:   int(c.Timeout.Milliseconds()),
 					TestURL:     testURL,
@@ -89,11 +93,15 @@ func (tr *TestRunner) RunSpeedTests(ctx context.Context, profiles []parsers.Prox
 
 	res, err := runIPCTests(
 		tr, ctx, profiles, &config,
-		func(configs []*core.OutboundConfig, c *SpeedTestRunnerConfig) ipcprotocol.Request {
+		func(currentProfiles []parsers.ProxyProfile, c *SpeedTestRunnerConfig) ipcprotocol.Request {
+			tags := make([]string, len(currentProfiles))
+			for i, p := range currentProfiles {
+				tags[i] = p.Config.Tag
+			}
 			return ipcprotocol.Request{
-				Type:     "test",
+				Type:     ipcprotocol.RequestTypeTest,
 				TestType: ipcprotocol.SpeedTest,
-				Configs:  toRawConfigs(configs),
+				Tags:     tags,
 				Settings: mustMarshal(ipcprotocol.SpeedSettings{
 					Mode:        mode,
 					TimeoutMs:   int(c.Timeout.Milliseconds()),
@@ -131,7 +139,7 @@ func runIPCTests[TResult any, TConfig testConfig](
 	ctx context.Context,
 	profiles []parsers.ProxyProfile,
 	config TConfig,
-	buildTestReq func([]*core.OutboundConfig, TConfig) ipcprotocol.Request,
+	buildTestReq func([]parsers.ProxyProfile, TConfig) ipcprotocol.Request,
 	convert func(ipcprotocol.Response) TResult,
 	onProgress func(TResult),
 	isSuccess func(TResult) bool,
@@ -154,12 +162,12 @@ func runIPCTests[TResult any, TConfig testConfig](
 	var validationErrors map[string]int
 
 	validateReq := ipcprotocol.Request{
-		Type:    "validate",
+		Type:    ipcprotocol.RequestTypeValidate,
 		Configs: toRawConfigs(extractConfigs(profiles)),
 	}
 
 	err := proc.SendRequest(ctx, validateReq, func(r ipcprotocol.Response) {
-		if r.Type == "validation" {
+		if r.Type == ipcprotocol.ResponseTypeValidation {
 			validationErrors = r.ValidationErrors
 			if base.CoreCreatedCallback != nil {
 				base.CoreCreatedCallback(validationErrors)
@@ -186,12 +194,12 @@ func runIPCTests[TResult any, TConfig testConfig](
 			base.RoundStartedCallback(round, len(currentProfiles))
 		}
 
-		req := buildTestReq(extractConfigs(currentProfiles), config)
+		req := buildTestReq(currentProfiles, config)
 		var roundResults []TResult
 
 		err := proc.SendRequest(ctx, req, func(r ipcprotocol.Response) {
 			switch r.Type {
-			case "result":
+			case ipcprotocol.ResponseTypeResult:
 				res := convert(r)
 				roundResults = append(roundResults, res)
 				if onProgress != nil {

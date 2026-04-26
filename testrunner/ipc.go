@@ -93,12 +93,12 @@ func (tp *TesterProcess) SendRequest(ctx context.Context, req ipcprotocol.Reques
 			return fmt.Errorf("decode error: %w", err)
 		}
 		switch r.Type {
-		case "done":
+		case ipcprotocol.ResponseTypeDone:
 			if testErr != nil {
 				return testErr
 			}
 			return nil
-		case "error":
+		case ipcprotocol.ResponseTypeError:
 			// Do not return immediately; keep reading until "done"
 			// so the next round does not read leftover messages.
 			testErr = fmt.Errorf("tester error: %s", r.Error)

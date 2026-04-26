@@ -14,13 +14,30 @@ const (
 	SpeedTest   TestType = "speed"
 )
 
+type RequestType string
+
+const (
+	RequestTypeValidate RequestType = "validate"
+	RequestTypeTest     RequestType = "test"
+)
+
+type ResponseType string
+
+const (
+	ResponseTypeValidation ResponseType = "validation"
+	ResponseTypeResult     ResponseType = "result"
+	ResponseTypeError      ResponseType = "error"
+	ResponseTypeDone       ResponseType = "done"
+)
+
 // Request is the generic IPC request that replaces TestRequest.
 // Type can be "validate" or "test".
 // For "test", TestType and Settings must be set.
 type Request struct {
-	Type     string          `json:"type"` // "test" | "validate"
+	Type     RequestType     `json:"type"`
 	TestType TestType        `json:"test_type,omitempty"`
 	Configs  []*RawConfig    `json:"configs"`
+	Tags     []string        `json:"tags,omitempty"`
 	Settings json.RawMessage `json:"settings,omitempty"`
 }
 
@@ -84,7 +101,7 @@ func (rc *RawConfig) ToCore() (*core.OutboundConfig, error) {
 
 // Response is streamed back to the library (one JSON value per line).
 type Response struct {
-	Type             string         `json:"type"` // "validation" | "result" | "error" | "done"
+	Type             ResponseType   `json:"type"`
 	ValidationErrors map[string]int `json:"validation_errors,omitempty"`
 	Tag              string         `json:"tag,omitempty"`
 	Error            string         `json:"error,omitempty"`

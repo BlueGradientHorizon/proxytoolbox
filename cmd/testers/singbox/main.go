@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/bluegradienthorizon/proxytoolbox/core"
@@ -19,7 +20,11 @@ import (
 	"github.com/sagernet/sing/common/metadata"
 )
 
-type sbTester struct{}
+type sbTester struct {
+	mu        sync.Mutex
+	configs   []*core.OutboundConfig
+	configMap map[string]*core.OutboundConfig
+}
 
 func (t *sbTester) Info() ipcprotocol.CoreInfo {
 	return ipcprotocol.CoreInfo{
@@ -29,7 +34,7 @@ func (t *sbTester) Info() ipcprotocol.CoreInfo {
 }
 
 func (t *sbTester) Validate(ctx context.Context, configs []*core.OutboundConfig, sendResult func(ipcprotocol.Response)) error {
-	instance, validationErrors, _, err := createBox(ctx, configs)
+	instance, validationErrors, validConfigs, err := createBox(ctx, configs)
 	if instance != nil {
 		instance.Close()
 	}
@@ -43,37 +48,65 @@ func (t *sbTester) Validate(ctx context.Context, configs []*core.OutboundConfig,
 	}
 
 	sendResult(ipcprotocol.Response{
-		Type:             "validation",
+		Type:             ipcprotocol.ResponseTypeValidation,
 		ValidationErrors: validationErrors,
 		Error:            strings.Join(parts, "; "),
 	})
+
+	// Store valid configs for subsequent test requests
+	t.mu.Lock()
+	t.configs = validConfigs
+	t.configMap = make(map[string]*core.OutboundConfig, len(validConfigs))
+	for _, cfg := range validConfigs {
+		t.configMap[cfg.Tag] = cfg
+	}
+	t.mu.Unlock()
+
 	return nil
 }
 
-func (t *sbTester) TestLatency(ctx context.Context, configs []*core.OutboundConfig, settings ipcprotocol.LatencySettings, sendResult func(ipcprotocol.Response)) error {
-	instance, _, validConfigs, err := createBox(ctx, configs)
+func (t *sbTester) selectConfigs(tags []string) []*core.OutboundConfig {
+	t.mu.Lock()
+	defer t.mu.Unlock()
 
-	validMap := make(map[string]struct{})
-	for _, cfg := range validConfigs {
-		validMap[cfg.Tag] = struct{}{}
+	if len(tags) == 0 {
+		out := make([]*core.OutboundConfig, len(t.configs))
+		copy(out, t.configs)
+		return out
 	}
 
+	out := make([]*core.OutboundConfig, 0, len(tags))
+	for _, tag := range tags {
+		if cfg, ok := t.configMap[tag]; ok {
+			out = append(out, cfg)
+		}
+	}
+	return out
+}
+
+func (t *sbTester) TestLatency(ctx context.Context, settings ipcprotocol.LatencySettings, tags []string, sendResult func(ipcprotocol.Response)) error {
+	configs := t.selectConfigs(tags)
+
+	// Report validation-failed for requested tags that are not present in the stored set
+	foundTags := make(map[string]struct{}, len(configs))
 	for _, cfg := range configs {
-		if _, ok := validMap[cfg.Tag]; !ok {
-			sendResult(ipcprotocol.Response{Type: "result", Tag: cfg.Tag, Error: "validation failed"})
+		foundTags[cfg.Tag] = struct{}{}
+	}
+	for _, tag := range tags {
+		if _, ok := foundTags[tag]; !ok {
+			sendResult(ipcprotocol.Response{Type: ipcprotocol.ResponseTypeResult, Tag: tag, Error: "validation failed"})
 		}
 	}
 
-	if err != nil {
-		if len(validConfigs) > 0 {
-			for _, cfg := range validConfigs {
-				sendResult(ipcprotocol.Response{Type: "result", Tag: cfg.Tag, Error: err.Error()})
-			}
-		}
+	if len(configs) == 0 {
 		return nil
 	}
 
-	if len(validConfigs) == 0 {
+	instance, err := buildInstance(ctx, configs)
+	if err != nil {
+		for _, cfg := range configs {
+			sendResult(ipcprotocol.Response{Type: ipcprotocol.ResponseTypeResult, Tag: cfg.Tag, Error: err.Error()})
+		}
 		return nil
 	}
 
@@ -108,7 +141,7 @@ func (t *sbTester) TestLatency(ctx context.Context, configs []*core.OutboundConf
 	wait := lt.Run(ch)
 	for range proxies {
 		r := <-ch
-		resp := ipcprotocol.Response{Type: "result", Tag: r.Tag, LatencyMs: r.Delay}
+		resp := ipcprotocol.Response{Type: ipcprotocol.ResponseTypeResult, Tag: r.Tag, LatencyMs: r.Delay}
 		if r.Error != nil {
 			resp.Error = r.Error.Error()
 		}
@@ -118,30 +151,29 @@ func (t *sbTester) TestLatency(ctx context.Context, configs []*core.OutboundConf
 	return nil
 }
 
-func (t *sbTester) TestSpeed(ctx context.Context, configs []*core.OutboundConfig, settings ipcprotocol.SpeedSettings, sendResult func(ipcprotocol.Response)) error {
-	instance, _, validConfigs, err := createBox(ctx, configs)
+func (t *sbTester) TestSpeed(ctx context.Context, settings ipcprotocol.SpeedSettings, tags []string, sendResult func(ipcprotocol.Response)) error {
+	configs := t.selectConfigs(tags)
 
-	validMap := make(map[string]struct{})
-	for _, cfg := range validConfigs {
-		validMap[cfg.Tag] = struct{}{}
-	}
-
+	// Report validation-failed for requested tags that are not present in the stored set
+	foundTags := make(map[string]struct{}, len(configs))
 	for _, cfg := range configs {
-		if _, ok := validMap[cfg.Tag]; !ok {
-			sendResult(ipcprotocol.Response{Type: "result", Tag: cfg.Tag, Error: "validation failed"})
+		foundTags[cfg.Tag] = struct{}{}
+	}
+	for _, tag := range tags {
+		if _, ok := foundTags[tag]; !ok {
+			sendResult(ipcprotocol.Response{Type: ipcprotocol.ResponseTypeResult, Tag: tag, Error: "validation failed"})
 		}
 	}
 
-	if err != nil {
-		if len(validConfigs) > 0 {
-			for _, cfg := range validConfigs {
-				sendResult(ipcprotocol.Response{Type: "result", Tag: cfg.Tag, Error: err.Error()})
-			}
-		}
+	if len(configs) == 0 {
 		return nil
 	}
 
-	if len(validConfigs) == 0 {
+	instance, err := buildInstance(ctx, configs)
+	if err != nil {
+		for _, cfg := range configs {
+			sendResult(ipcprotocol.Response{Type: ipcprotocol.ResponseTypeResult, Tag: cfg.Tag, Error: err.Error()})
+		}
 		return nil
 	}
 
@@ -184,7 +216,7 @@ func (t *sbTester) TestSpeed(ctx context.Context, configs []*core.OutboundConfig
 	wait := st.Run(ch)
 	for range proxies {
 		r := <-ch
-		resp := ipcprotocol.Response{Type: "result", Tag: r.Tag, Speed: r.Speed}
+		resp := ipcprotocol.Response{Type: ipcprotocol.ResponseTypeResult, Tag: r.Tag, Speed: r.Speed}
 		if r.Error != nil {
 			resp.Error = r.Error.Error()
 		}
@@ -194,6 +226,7 @@ func (t *sbTester) TestSpeed(ctx context.Context, configs []*core.OutboundConfig
 	return nil
 }
 
+// createBox validates configs by attempting to convert and instantiate each one individually.
 func createBox(ctx context.Context, configs []*core.OutboundConfig) (*box.Box, map[string]int, []*core.OutboundConfig, error) {
 	adapter := NewAdapter()
 	validationErrors := make(map[string]int)
@@ -234,6 +267,28 @@ func createBox(ctx context.Context, configs []*core.OutboundConfig) (*box.Box, m
 		return nil, validationErrors, validConfigs, err
 	}
 	return instance, validationErrors, validConfigs, nil
+}
+
+// buildInstance creates a sing-box instance from previously validated configs without re-validating.
+func buildInstance(ctx context.Context, configs []*core.OutboundConfig) (*box.Box, error) {
+	adapter := NewAdapter()
+	outbounds := make([]option.Outbound, 0, len(configs))
+	for _, cfg := range configs {
+		sbOut, err := adapter.ConvertOutbound(cfg)
+		if err != nil {
+			return nil, err
+		}
+		outbounds = append(outbounds, *sbOut)
+	}
+	if len(outbounds) == 0 {
+		return nil, fmt.Errorf("no valid configs")
+	}
+	opts := option.Options{
+		Log:       &option.LogOptions{Level: "panic", Timestamp: true},
+		Outbounds: outbounds,
+	}
+	instanceCtx := include.Context(ctx)
+	return box.New(box.Options{Context: instanceCtx, Options: opts})
 }
 
 func main() {

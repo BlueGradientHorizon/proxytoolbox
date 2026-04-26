@@ -10,6 +10,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 
 	"github.com/bluegradienthorizon/proxytoolbox/core"
@@ -20,8 +21,8 @@ import (
 type CoreTester interface {
 	Info() ipcprotocol.CoreInfo
 	Validate(ctx context.Context, configs []*core.OutboundConfig, sendResult func(ipcprotocol.Response)) error
-	TestLatency(ctx context.Context, configs []*core.OutboundConfig, settings ipcprotocol.LatencySettings, sendResult func(ipcprotocol.Response)) error
-	TestSpeed(ctx context.Context, configs []*core.OutboundConfig, settings ipcprotocol.SpeedSettings, sendResult func(ipcprotocol.Response)) error
+	TestLatency(ctx context.Context, settings ipcprotocol.LatencySettings, tags []string, sendResult func(ipcprotocol.Response)) error
+	TestSpeed(ctx context.Context, settings ipcprotocol.SpeedSettings, tags []string, sendResult func(ipcprotocol.Response)) error
 }
 
 // Run parses --info / --run and blocks forever serving TCP requests.
@@ -66,11 +67,13 @@ func Run(tester CoreTester) {
 func handle(conn net.Conn, tester CoreTester) {
 	bw := bufio.NewWriter(conn)
 	dec := json.NewDecoder(conn)
-
+	var writeMu sync.Mutex
 	write := func(r ipcprotocol.Response) {
 		b, _ := json.Marshal(r)
+		writeMu.Lock()
 		fmt.Fprintf(bw, "%s\n", b)
 		bw.Flush()
+		writeMu.Unlock()
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -92,37 +95,42 @@ func handle(conn net.Conn, tester CoreTester) {
 			if err == io.EOF {
 				return
 			}
-			write(ipcprotocol.Response{Type: "error", Error: err.Error()})
+			write(ipcprotocol.Response{Type: ipcprotocol.ResponseTypeError, Error: err.Error()})
 			return
 		}
 
-		var err error
-		switch req.Type {
-		case "validate":
-			err = tester.Validate(ctx, toCoreConfigs(req.Configs), write)
-		case "test":
-			switch req.TestType {
-			case ipcprotocol.LatencyTest:
-				var s ipcprotocol.LatencySettings
-				if err = json.Unmarshal(req.Settings, &s); err == nil {
-					err = tester.TestLatency(ctx, toCoreConfigs(req.Configs), s, write)
-				}
-			case ipcprotocol.SpeedTest:
-				var s ipcprotocol.SpeedSettings
-				if err = json.Unmarshal(req.Settings, &s); err == nil {
-					err = tester.TestSpeed(ctx, toCoreConfigs(req.Configs), s, write)
+		// Handle each request in its own goroutine so that the main read loop
+		// can immediately detect connection loss (parent termination) via EOF
+		// even while a long-running test is in progress.
+		go func(req ipcprotocol.Request) {
+			var err error
+			switch req.Type {
+			case ipcprotocol.RequestTypeValidate:
+				err = tester.Validate(ctx, toCoreConfigs(req.Configs), write)
+			case ipcprotocol.RequestTypeTest:
+				switch req.TestType {
+				case ipcprotocol.LatencyTest:
+					var s ipcprotocol.LatencySettings
+					if err = json.Unmarshal(req.Settings, &s); err == nil {
+						err = tester.TestLatency(ctx, s, req.Tags, write)
+					}
+				case ipcprotocol.SpeedTest:
+					var s ipcprotocol.SpeedSettings
+					if err = json.Unmarshal(req.Settings, &s); err == nil {
+						err = tester.TestSpeed(ctx, s, req.Tags, write)
+					}
+				default:
+					err = fmt.Errorf("unknown test type: %s", req.TestType)
 				}
 			default:
-				err = fmt.Errorf("unknown test type: %s", req.TestType)
+				err = fmt.Errorf("unknown request type: %s", req.Type)
 			}
-		default:
-			err = fmt.Errorf("unknown request type: %s", req.Type)
-		}
 
-		if err != nil {
-			write(ipcprotocol.Response{Type: "error", Error: err.Error()})
-		}
-		write(ipcprotocol.Response{Type: "done"})
+			if err != nil {
+				write(ipcprotocol.Response{Type: ipcprotocol.ResponseTypeError, Error: err.Error()})
+			}
+			write(ipcprotocol.Response{Type: ipcprotocol.ResponseTypeDone})
+		}(req)
 	}
 }
 
