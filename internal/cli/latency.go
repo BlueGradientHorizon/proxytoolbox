@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/bluegradienthorizon/proxytoolbox/cmd/proxytoolbox/utils"
+	"github.com/bluegradienthorizon/proxytoolbox/internal/cli/utils"
 	"github.com/bluegradienthorizon/proxytoolbox/parsers"
 	"github.com/bluegradienthorizon/proxytoolbox/pkg/ipcprotocol"
 	"github.com/bluegradienthorizon/proxytoolbox/testers"

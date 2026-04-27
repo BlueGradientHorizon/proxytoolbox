@@ -6,4 +6,4 @@ EXT := .exe
 endif
 
 build:
-	go build -o ../../bin/proxytoolbox$(EXT) .
+	go build -o ../../bin/cli$(EXT) .

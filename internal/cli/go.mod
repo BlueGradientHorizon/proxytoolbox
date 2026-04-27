@@ -1,4 +1,4 @@
-module github.com/bluegradienthorizon/proxytoolbox/cmd/proxytoolbox
+module github.com/bluegradienthorizon/proxytoolbox/internal/cli
 
 go 1.26
 

@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bluegradienthorizon/proxytoolbox/cmd/proxytoolbox/utils"
+	"github.com/bluegradienthorizon/proxytoolbox/internal/cli/utils"
 	"github.com/bluegradienthorizon/proxytoolbox/parsers"
 	"github.com/bluegradienthorizon/proxytoolbox/testers"
 	"github.com/bluegradienthorizon/proxytoolbox/testrunner"

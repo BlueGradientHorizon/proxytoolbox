@@ -1,20 +1,20 @@
-.PHONY: build proxytoolbox tester-singbox clean
+.PHONY: build cli tester-singbox clean
 
 EXT :=
 ifeq ($(OS),Windows_NT)
 EXT := .exe
 endif
 
-build: proxytoolbox tester-singbox
+build: cli tester-singbox
 
-proxytoolbox:
-	cd cmd/proxytoolbox && make
+cli:
+	cd internal/cli && make
 
 tester-singbox:
-	cd cmd/testers/singbox && make
+	cd internal/testers/singbox && make
 
 run: build
-	./bin/proxytoolbox$(EXT)
+	./bin/cli$(EXT)
 
 clean:
 ifeq ($(OS),Windows_NT)
