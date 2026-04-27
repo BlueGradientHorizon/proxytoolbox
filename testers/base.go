@@ -24,15 +24,28 @@ func runParallel[R any](
 	ctx context.Context,
 	timeout time.Duration,
 	count int,
+	concurrency int,
 	testFunc func(context.Context, int) R,
 	resChans ...chan<- R,
 ) func() {
 	var wg sync.WaitGroup
 
+	if concurrency <= 0 {
+		concurrency = count
+	}
+	sem := make(chan struct{}, concurrency)
+
 	for i := range count {
 		wg.Add(1)
 		go func(index int) {
 			defer wg.Done()
+
+			select {
+			case sem <- struct{}{}:
+			case <-ctx.Done():
+				return
+			}
+			defer func() { <-sem }()
 
 			testCtx, cancel := context.WithTimeout(ctx, timeout)
 			defer cancel()

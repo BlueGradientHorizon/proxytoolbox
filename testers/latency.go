@@ -32,8 +32,9 @@ type LatencyTestResult struct {
 
 // LatencyTestSettings configures the latency test behavior.
 type LatencyTestSettings struct {
-	TestURL string
-	Timeout time.Duration
+	TestURL     string
+	Timeout     time.Duration
+	Concurrency int
 }
 
 // NewLatencyTestSettings creates default latency test settings.
@@ -102,7 +103,7 @@ func NewLatencyTest(
 // Results are sent to all provided result channels.
 // Returns a function that waits for all goroutines to complete.
 func (t *LatencyTest) Run(resChans ...chan<- LatencyTestResult) func() {
-	return runParallel(t.ctx, t.settings.Timeout, len(t.items), func(ctx context.Context, i int) LatencyTestResult {
+	return runParallel(t.ctx, t.settings.Timeout, len(t.items), t.settings.Concurrency, func(ctx context.Context, i int) LatencyTestResult {
 		item := t.items[i]
 		defer item.client.CloseIdleConnections()
 

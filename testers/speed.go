@@ -65,6 +65,7 @@ type SpeedTestSettings struct {
 	Provider    SpeedTestProvider
 	Timeout     time.Duration
 	TargetBytes int64
+	Concurrency int
 }
 
 // NewDownloadTestSettings creates default download speed test settings.
@@ -139,7 +140,7 @@ func NewSpeedTest(
 // Results are sent to all provided result channels.
 // Returns a function that waits for all goroutines to complete.
 func (t *SpeedTest) Run(resChans ...chan<- SpeedTestResult) func() {
-	return runParallel(t.ctx, t.settings.Timeout, len(t.items), func(ctx context.Context, i int) SpeedTestResult {
+	return runParallel(t.ctx, t.settings.Timeout, len(t.items), t.settings.Concurrency, func(ctx context.Context, i int) SpeedTestResult {
 		item := t.items[i]
 		defer item.client.CloseIdleConnections()
 

@@ -165,8 +165,9 @@ func (t *sbTester) TestLatency(ctx context.Context, settings ipcprotocol.Latency
 
 	timeout := time.Duration(settings.TimeoutMs) * time.Millisecond
 	lt, err := testers.NewLatencyTest(ctx, testers.LatencyTestSettings{
-		TestURL: settings.TestURL,
-		Timeout: timeout,
+		TestURL:     settings.TestURL,
+		Timeout:     timeout,
+		Concurrency: settings.Concurrency,
 	}, proxies, dialers, CreateTLSConfigProvider())
 	if err != nil {
 		instance.Close()
@@ -250,6 +251,7 @@ func (t *sbTester) TestSpeed(ctx context.Context, settings ipcprotocol.SpeedSett
 		Provider:    testers.CloudflareProvider,
 		Timeout:     timeout,
 		TargetBytes: settings.TargetBytes,
+		Concurrency: settings.Concurrency,
 	}
 	st, err := testers.NewSpeedTest(ctx, stSettings, proxies, dialers, CreateTLSConfigProvider())
 	if err != nil {

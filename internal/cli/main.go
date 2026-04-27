@@ -22,15 +22,17 @@ func main() {
 	flag.Parse()
 
 	// Configure latency test parameters
-	ltSettings := LatencyTestSettings{
+	var ltSettings = LatencyTestSettings{
 		Concurrency: 0,
 		Timeout:     7 * time.Second,
 		Rounds:      3,
 	}
 
-	runSpeedTestFlag := false // Set to true to run speed tests after latency tests
+	// Set this to true if you want to perform speed test after latency test
+	var runSpeedTestFlag = false
 
-	stSettings := SpeedTestSettings{
+	// Configure speed test parameters
+	var stSettings = SpeedTestSettings{
 		Concurrency: 1,
 		Rounds:      2,
 		Timeout:     10 * time.Second,
@@ -76,7 +78,7 @@ func main() {
 	var configsConnUris []string
 
 	content := strings.TrimSpace(string(data))
-	for _, line := range strings.Split(content, "\n") {
+	for line := range strings.SplitSeq(content, "\n") {
 		configsConnUris = append(configsConnUris, line)
 	}
 
@@ -146,7 +148,7 @@ func main() {
 	fmt.Println("Shutting down...")
 }
 
-// writeResultsToFile writes successful latency test results to out.txt
+// Writes successful latency test results to out.txt
 func writeResultsToFile(sortedResults []testers.LatencyTestResult, configs []parsers.ProxyConfig) {
 	success := 0
 	f, _ := os.Create("out.txt")
