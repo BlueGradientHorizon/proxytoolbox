@@ -26,7 +26,7 @@ type ProxyInfo struct {
 // LatencyTestResult contains the result of a latency test for a single proxy.
 type LatencyTestResult struct {
 	Tag   string
-	Delay int32
+	Delay int64
 	Proxy ProxyInfo
 	Error error
 }
@@ -114,7 +114,7 @@ func (t *LatencyTest) Run(resChans ...chan<- LatencyTestResult) func() {
 		}
 		return LatencyTestResult{
 			Tag:   item.proxy.Tag,
-			Delay: int32(val),
+			Delay: val,
 			Proxy: item.proxy,
 			Error: err,
 		}
@@ -131,10 +131,10 @@ func (t *LatencyTest) runTest(ctx context.Context, item latencyTestItem) (int64,
 	if err != nil {
 		return -1, err
 	}
+	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 400 {
 		return -1, fmt.Errorf("unexpected status: %d", resp.StatusCode)
 	}
-	defer resp.Body.Close()
 
 	return int64(time.Since(*item.start) / time.Millisecond), nil
 }

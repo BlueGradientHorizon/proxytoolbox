@@ -78,10 +78,10 @@ func cleanMalformedPercentEncoding(input string) string {
 	for i := 0; i < len(input); i++ {
 		if input[i] == '%' {
 			if i+2 < len(input) && isHex(input[i+1]) && isHex(input[i+2]) {
-				builder.WriteByte(input[i])
-				builder.WriteByte(input[i+1])
-				builder.WriteByte(input[i+2])
+				builder.WriteString(input[i : i+3])
 				i += 2
+			} else {
+				builder.WriteByte('%')
 			}
 		} else {
 			builder.WriteByte(input[i])

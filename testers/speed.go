@@ -183,10 +183,10 @@ func (t *SpeedTest) runTest(ctx context.Context, item speedTestItem) (float64, e
 	if err != nil {
 		return 0, err
 	}
+	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 400 {
 		return -1, fmt.Errorf("unexpected status: %d", resp.StatusCode)
 	}
-	defer resp.Body.Close()
 
 	var bytesProcessed int64
 	if t.settings.Mode == Download {

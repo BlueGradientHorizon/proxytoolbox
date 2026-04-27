@@ -23,8 +23,9 @@ func ParseConfig(connURI string) (*ProxyConfig, error) {
 		return nil, errors.New("ParseConfig: empty configuration URI")
 	}
 
-	splitURI := strings.Split(connURI, "://")
+	splitURI := strings.SplitN(connURI, "://", 2)
 
+	// TODO should be case-insensitive
 	parsers := map[string]ConfigParser{
 		"vless":     VLESSParser{},
 		"trojan":    TrojanParser{},
@@ -34,7 +35,8 @@ func ParseConfig(connURI string) (*ProxyConfig, error) {
 		"hy2":       Hysteria2Parser{},
 	}
 
-	if parser, ok := parsers[splitURI[0]]; ok {
+	scheme := strings.ToLower(splitURI[0])
+	if parser, ok := parsers[scheme]; ok {
 		config, err := parser.ParseConfig(connURI)
 		if err != nil {
 			return nil, errors.New("ParseConfig: " + err.Error())

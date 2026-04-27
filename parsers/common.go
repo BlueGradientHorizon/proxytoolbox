@@ -159,23 +159,23 @@ func parseConfigURI(uri string, scheme string, fixer CustomURIFixer) (*url.URL, 
 		if err != nil {
 			return nil, errors.New("parseConfigURI: " + err.Error())
 		}
-	}
-
-	u, err = url.Parse(uri)
-	if err != nil {
-		return nil, errors.New("parseConfigURI: " + err.Error())
+	} else {
+		u, err = url.Parse(uri)
+		if err != nil {
+			return nil, errors.New("parseConfigURI: " + err.Error())
+		}
 	}
 
 	if u.Scheme == "" {
 		u.Scheme = scheme
 	}
-
 	return u, nil
 }
 
 var ipv6Regexp = regexp.MustCompile(`^\[([a-fA-F0-9:]+)\]:(\d+)$`)
 
 func parseNetlocForEndpoint(u *url.URL) (string, uint16, bool) {
+	// TODO: return error instead of port 0
 	netloc := u.Host
 	match := ipv6Regexp.FindStringSubmatch(netloc)
 
@@ -210,7 +210,7 @@ func parseNetlocForEndpoint(u *url.URL) (string, uint16, bool) {
 	address = strings.TrimPrefix(address, "[")
 	address = strings.TrimSuffix(address, "]")
 
-	if port < 0 || port > math.MaxUint16 {
+	if port <= 0 || port > math.MaxUint16 {
 		return "", 0, false
 	}
 

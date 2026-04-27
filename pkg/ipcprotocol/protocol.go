@@ -111,7 +111,7 @@ type Response struct {
 	ValidationErrors []ValidationError `json:"validation_errors,omitempty"`
 	Tag              string            `json:"tag,omitempty"`
 	Error            string            `json:"error,omitempty"`
-	LatencyMs        int32             `json:"latency_ms,omitempty"`
+	LatencyMs        int64             `json:"latency_ms,omitempty"`
 	Speed            float64           `json:"speed,omitempty"`
 }
 
