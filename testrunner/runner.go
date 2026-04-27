@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync"
 
 	"github.com/bluegradienthorizon/proxytoolbox/core"
 	"github.com/bluegradienthorizon/proxytoolbox/parsers"
@@ -15,6 +16,9 @@ import (
 type TestRunner struct {
 	testerPath  string
 	testerDebug bool
+	proc        *TesterProcess
+	mu          sync.Mutex
+	testMu      sync.Mutex
 }
 
 // NewTestRunner creates a new test runner with the specified configuration.
@@ -25,8 +29,34 @@ func NewTestRunner(testerSettings TesterSettings) (*TestRunner, error) {
 	return &TestRunner{testerPath: testerSettings.TesterPath, testerDebug: testerSettings.TesterDebug}, nil
 }
 
+func (tr *TestRunner) ensureProc() (*TesterProcess, error) {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	if tr.proc != nil {
+		return tr.proc, nil
+	}
+	tr.proc = &TesterProcess{path: tr.testerPath, debug: tr.testerDebug}
+	if err := tr.proc.Start(); err != nil {
+		tr.proc = nil
+		return nil, fmt.Errorf("start tester: %w", err)
+	}
+	return tr.proc, nil
+}
+
+func (tr *TestRunner) invalidateProc() {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	if tr.proc != nil {
+		tr.proc.Close()
+		tr.proc = nil
+	}
+}
+
 // Close cleans up resources used by the test runner.
-func (tr *TestRunner) Close() error { return nil }
+func (tr *TestRunner) Close() error {
+	tr.invalidateProc()
+	return nil
+}
 
 // RunLatencyTests executes latency tests with automatic lifecycle management.
 func (tr *TestRunner) RunLatencyTests(ctx context.Context, configs []parsers.ProxyConfig, ltRunnerSettings LatencyTestRunnerSettings) (*LatencyTestResults, error) {
@@ -152,11 +182,13 @@ func runIPCTests[TResult any, TSettings testSettings](
 		configs[i].Config.Tag = fmt.Sprintf("outbound-%d", i)
 	}
 
-	proc := &TesterProcess{path: tr.testerPath, debug: tr.testerDebug}
-	if err := proc.Start(); err != nil {
-		return nil, fmt.Errorf("start tester: %w", err)
+	tr.testMu.Lock()
+	defer tr.testMu.Unlock()
+
+	proc, err := tr.ensureProc()
+	if err != nil {
+		return nil, err
 	}
-	defer proc.Close()
 
 	// --- Validation phase ---
 	var validationErrors []ipcprotocol.ValidationError
@@ -166,7 +198,7 @@ func runIPCTests[TResult any, TSettings testSettings](
 		Configs: toRawConfigs(extractConfigs(configs)),
 	}
 
-	err := proc.SendRequest(ctx, validateReq, func(r ipcprotocol.Response) {
+	err = proc.SendRequest(ctx, validateReq, func(r ipcprotocol.Response) {
 		if r.Type == ipcprotocol.ResponseTypeValidation {
 			validationErrors = r.ValidationErrors
 			if base.CoreCreatedCallback != nil {
@@ -175,6 +207,9 @@ func runIPCTests[TResult any, TSettings testSettings](
 		}
 	})
 	if err != nil {
+		if err != ErrTesterBusy {
+			tr.invalidateProc()
+		}
 		return nil, fmt.Errorf("validation: %w", err)
 	}
 
@@ -197,7 +232,7 @@ func runIPCTests[TResult any, TSettings testSettings](
 		req := buildTestReq(currentConfigs, settings)
 		var roundResults []TResult
 
-		err := proc.SendRequest(ctx, req, func(r ipcprotocol.Response) {
+		err = proc.SendRequest(ctx, req, func(r ipcprotocol.Response) {
 			switch r.Type {
 			case ipcprotocol.ResponseTypeResult:
 				res := convert(r)
@@ -209,6 +244,9 @@ func runIPCTests[TResult any, TSettings testSettings](
 		})
 
 		if err != nil {
+			if err != ErrTesterBusy {
+				tr.invalidateProc()
+			}
 			return nil, fmt.Errorf("round %d: %w", round+1, err)
 		}
 

@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -15,6 +16,9 @@ import (
 
 	"github.com/bluegradienthorizon/proxytoolbox/pkg/ipcprotocol"
 )
+
+// ErrTesterBusy is returned when the tester process is already handling a request.
+var ErrTesterBusy = errors.New("tester is busy")
 
 // TesterProcess wraps a single tester binary invocation.
 type TesterProcess struct {
@@ -112,6 +116,10 @@ func (tp *TesterProcess) SendRequest(ctx context.Context, req ipcprotocol.Reques
 			// Do not return immediately; keep reading until "done"
 			// so the next round does not read leftover messages.
 			testErr = fmt.Errorf("tester error: %s", r.Error)
+		case ipcprotocol.ResponseTypeBusy:
+			// Do not return immediately; keep reading until "done"
+			// so the next round does not read leftover messages.
+			testErr = ErrTesterBusy
 		default:
 			if onResponse != nil {
 				onResponse(r)

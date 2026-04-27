@@ -29,12 +29,12 @@ func main() {
 	}
 
 	// Set this to true if you want to perform speed test after latency test
-	var runSpeedTestFlag = false
+	var runSpeedTestFlag = true
 
 	// Configure speed test parameters
 	var stSettings = SpeedTestSettings{
 		Concurrency: 1,
-		Rounds:      2,
+		Rounds:      1,
 		Timeout:     10 * time.Second,
 		Mode:        testers.Download,
 		TestLimit:   5,
@@ -111,12 +111,17 @@ func main() {
 
 	ctx := context.Background()
 
-	ltTesterSettings := testrunner.TesterSettings{
+	runner, err := testrunner.NewTestRunner(testrunner.TesterSettings{
 		TesterPath:  testerPath,
 		TesterDebug: testerDebug,
+	})
+	if err != nil {
+		fmt.Printf("Failed to create test runner: %v\n", err)
+		os.Exit(-1)
 	}
+	defer runner.Close()
 
-	latencyResults, taggedConfigs, ltErr := runLatencyTest(ctx, configs, ltSettings, ltTesterSettings)
+	latencyResults, taggedConfigs, ltErr := runLatencyTest(ctx, configs, ltSettings, runner)
 	if ltErr != nil {
 		fmt.Printf("Latency test error: %v\n", ltErr)
 		os.Exit(-1)
@@ -130,16 +135,11 @@ func main() {
 	// Write results to file
 	writeResultsToFile(latencyResults, taggedConfigs)
 
-	stTesterSettings := testrunner.TesterSettings{
-		TesterPath:  testerPath,
-		TesterDebug: testerDebug,
-	}
-
 	// Run speed tests if enabled
 	if runSpeedTestFlag {
 		// var speedResults []testers.SpeedTestResult
 		var speedErr error
-		_, taggedConfigs, speedErr = runSpeedTest(ctx, taggedConfigs, stSettings, stTesterSettings)
+		_, taggedConfigs, speedErr = runSpeedTest(ctx, taggedConfigs, stSettings, runner)
 		if speedErr != nil {
 			fmt.Printf("Speed test error: %v\n", speedErr)
 		}

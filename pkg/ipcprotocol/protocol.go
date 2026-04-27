@@ -27,6 +27,7 @@ const (
 	ResponseTypeValidation ResponseType = "validation"
 	ResponseTypeResult     ResponseType = "result"
 	ResponseTypeError      ResponseType = "error"
+	ResponseTypeBusy       ResponseType = "busy"
 	ResponseTypeDone       ResponseType = "done"
 )
 

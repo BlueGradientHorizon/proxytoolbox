@@ -18,13 +18,7 @@ type LatencyTestSettings struct {
 	Rounds      int
 }
 
-func runLatencyTest(ctx context.Context, configs []parsers.ProxyConfig, ltSettings LatencyTestSettings, testerSettings testrunner.TesterSettings) ([]testers.LatencyTestResult, []parsers.ProxyConfig, error) {
-	runner, err := testrunner.NewTestRunner(testerSettings)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create test runner: %w", err)
-	}
-	defer runner.Close()
-
+func runLatencyTest(ctx context.Context, configs []parsers.ProxyConfig, ltSettings LatencyTestSettings, runner *testrunner.TestRunner) ([]testers.LatencyTestResult, []parsers.ProxyConfig, error) {
 	var printerChan chan testers.LatencyTestResult
 	var printer *utils.StatsPrinter
 	var printDone chan bool

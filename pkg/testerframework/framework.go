@@ -67,14 +67,7 @@ func Run(tester CoreTester) {
 func handle(conn net.Conn, tester CoreTester) {
 	bw := bufio.NewWriter(conn)
 	dec := json.NewDecoder(conn)
-	var writeMu sync.Mutex
-	write := func(r ipcprotocol.Response) {
-		b, _ := json.Marshal(r)
-		writeMu.Lock()
-		fmt.Fprintf(bw, "%s\n", b)
-		bw.Flush()
-		writeMu.Unlock()
-	}
+	sw := &sessionWriter{bw: bw}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -95,7 +88,7 @@ func handle(conn net.Conn, tester CoreTester) {
 			if err == io.EOF {
 				return
 			}
-			write(ipcprotocol.Response{Type: ipcprotocol.ResponseTypeError, Error: err.Error()})
+			sw.Write(ipcprotocol.Response{Type: ipcprotocol.ResponseTypeError, Error: err.Error()})
 			return
 		}
 
@@ -103,21 +96,30 @@ func handle(conn net.Conn, tester CoreTester) {
 		// can immediately detect connection loss (parent termination) via EOF
 		// even while a long-running test is in progress.
 		go func(req ipcprotocol.Request) {
+			if !sw.TryLock() {
+				sw.Lock()
+				sw.Write(ipcprotocol.Response{Type: ipcprotocol.ResponseTypeBusy})
+				sw.Write(ipcprotocol.Response{Type: ipcprotocol.ResponseTypeDone})
+				sw.Unlock()
+				return
+			}
+			defer sw.Unlock()
+
 			var err error
 			switch req.Type {
 			case ipcprotocol.RequestTypeValidate:
-				err = tester.Validate(ctx, toCoreConfigs(req.Configs), write)
+				err = tester.Validate(ctx, toCoreConfigs(req.Configs), sw.Write)
 			case ipcprotocol.RequestTypeTest:
 				switch req.TestType {
 				case ipcprotocol.LatencyTest:
 					var s ipcprotocol.LatencySettings
 					if err = json.Unmarshal(req.Settings, &s); err == nil {
-						err = tester.TestLatency(ctx, s, req.Tags, write)
+						err = tester.TestLatency(ctx, s, req.Tags, sw.Write)
 					}
 				case ipcprotocol.SpeedTest:
 					var s ipcprotocol.SpeedSettings
 					if err = json.Unmarshal(req.Settings, &s); err == nil {
-						err = tester.TestSpeed(ctx, s, req.Tags, write)
+						err = tester.TestSpeed(ctx, s, req.Tags, sw.Write)
 					}
 				default:
 					err = fmt.Errorf("unknown test type: %s", req.TestType)
@@ -127,11 +129,37 @@ func handle(conn net.Conn, tester CoreTester) {
 			}
 
 			if err != nil {
-				write(ipcprotocol.Response{Type: ipcprotocol.ResponseTypeError, Error: err.Error()})
+				sw.Write(ipcprotocol.Response{Type: ipcprotocol.ResponseTypeError, Error: err.Error()})
 			}
-			write(ipcprotocol.Response{Type: ipcprotocol.ResponseTypeDone})
+			sw.Write(ipcprotocol.Response{Type: ipcprotocol.ResponseTypeDone})
 		}(req)
 	}
+}
+
+type sessionWriter struct {
+	sessionMu sync.Mutex
+	lineMu    sync.Mutex
+	bw        *bufio.Writer
+}
+
+func (sw *sessionWriter) Write(r ipcprotocol.Response) {
+	sw.lineMu.Lock()
+	defer sw.lineMu.Unlock()
+	b, _ := json.Marshal(r)
+	fmt.Fprintf(sw.bw, "%s\n", b)
+	sw.bw.Flush()
+}
+
+func (sw *sessionWriter) TryLock() bool {
+	return sw.sessionMu.TryLock()
+}
+
+func (sw *sessionWriter) Lock() {
+	sw.sessionMu.Lock()
+}
+
+func (sw *sessionWriter) Unlock() {
+	sw.sessionMu.Unlock()
 }
 
 func toCoreConfigs(raw []*ipcprotocol.RawConfig) []*core.OutboundConfig {

@@ -20,17 +20,11 @@ type SpeedTestSettings struct {
 	TargetBytes int64
 }
 
-func runSpeedTest(ctx context.Context, configs []parsers.ProxyConfig, stSettings SpeedTestSettings, testerSettings testrunner.TesterSettings) ([]testers.SpeedTestResult, []parsers.ProxyConfig, error) {
+func runSpeedTest(ctx context.Context, configs []parsers.ProxyConfig, stSettings SpeedTestSettings, runner *testrunner.TestRunner) ([]testers.SpeedTestResult, []parsers.ProxyConfig, error) {
 	// Limit configs based on test limit
 	if len(configs) > stSettings.TestLimit {
 		configs = configs[:stSettings.TestLimit]
 	}
-
-	runner, err := testrunner.NewTestRunner(testerSettings)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create test runner: %w", err)
-	}
-	defer runner.Close()
 
 	config := testrunner.SpeedTestRunnerSettings{
 		BaseTestRunnerSettings: testrunner.BaseTestRunnerSettings{
