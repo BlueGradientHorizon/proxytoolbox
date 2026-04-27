@@ -3,6 +3,7 @@ package testers
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"time"
@@ -129,6 +130,9 @@ func (t *LatencyTest) runTest(ctx context.Context, item latencyTestItem) (int64,
 	resp, err := item.client.Do(req)
 	if err != nil {
 		return -1, err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 400 {
+		return -1, fmt.Errorf("unexpected status: %d", resp.StatusCode)
 	}
 	defer resp.Body.Close()
 

@@ -24,7 +24,11 @@ func NewStatsPrinter(total int, results <-chan testers.LatencyTestResult) *Stats
 func (s *StatsPrinter) Start(done chan<- bool) {
 	s.printStats()
 	for range s.total {
-		result := <-s.results
+		result, ok := <-s.results
+		if !ok {
+			// TODO: what actually to do, if channel is closed prematurely?
+			break
+		}
 		s.completed++
 		if result.Error == nil {
 			s.succeeded++

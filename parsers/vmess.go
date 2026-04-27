@@ -15,7 +15,7 @@ import (
 type VMessParser struct{}
 
 func (p VMessParser) ParseConfig(connURI string) (*ProxyConfig, error) {
-	base64Part := strings.ReplaceAll(connURI, "vmess://", "")
+	base64Part := strings.TrimPrefix(connURI, "vmess://")
 
 	var enc *base64.Encoding
 	isURL := strings.ContainsAny(base64Part, "-_")
@@ -56,6 +56,7 @@ func (p VMessParser) ParseConfig(connURI string) (*ProxyConfig, error) {
 		params[k] = []string{v}
 	}
 
+	// TODO: can add or port theoretically be absent?
 	addr := params.Get("add")
 	portUnchecked, err := strconv.ParseUint(params.Get("port"), 10, 16)
 	if err != nil {

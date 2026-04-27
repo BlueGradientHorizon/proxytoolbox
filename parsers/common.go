@@ -173,9 +173,10 @@ func parseConfigURI(uri string, scheme string, fixer CustomURIFixer) (*url.URL, 
 	return u, nil
 }
 
+var ipv6Regexp = regexp.MustCompile(`^\[([a-fA-F0-9:]+)\]:(\d+)$`)
+
 func parseNetlocForEndpoint(u *url.URL) (string, uint16, bool) {
 	netloc := u.Host
-	ipv6Regexp := regexp.MustCompile(`^\[([a-fA-F0-9:]+)\]:(\d+)$`)
 	match := ipv6Regexp.FindStringSubmatch(netloc)
 
 	var address string

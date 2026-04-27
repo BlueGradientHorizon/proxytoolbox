@@ -48,7 +48,7 @@ func (p Hysteria2Parser) ParseConfig(connURI string) (*ProxyConfig, error) {
 	}
 
 	if sni == "" {
-		tlsConfig.Insecure = true
+		tlsConfig.ServerName = addr
 	}
 
 	// Create generic OutboundConfig

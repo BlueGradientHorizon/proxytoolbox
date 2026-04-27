@@ -32,20 +32,24 @@ func NewRegistry() *Registry {
 // Only considers files whose name contains "tester".
 func (r *Registry) Discover(paths ...string) error {
 	for _, dir := range paths {
-		files, err := os.ReadDir(dir)
+		dirEntry, err := os.ReadDir(dir)
 		if err != nil {
 			continue
 		}
-		for _, f := range files {
-			if f.IsDir() {
+		for _, e := range dirEntry {
+			if e.IsDir() {
 				continue
 			}
-			name := f.Name()
+			name := e.Name()
 			// Only probe files that look like tester programs.
 			if !strings.Contains(strings.ToLower(name), "tester") {
 				continue
 			}
-			if !isExecutable(name) {
+			isExe, err := isExecutable(e)
+			if err != nil {
+				continue
+			}
+			if !isExe {
 				continue
 			}
 			p := filepath.Join(dir, name)
@@ -83,10 +87,13 @@ func probe(path string) (*TesterInfo, error) {
 	return &TesterInfo{Name: ci.Name, Version: ci.Version, Path: path}, nil
 }
 
-func isExecutable(name string) bool {
+func isExecutable(entry os.DirEntry) (bool, error) {
 	if runtime.GOOS == "windows" {
-		return strings.HasSuffix(strings.ToLower(name), ".exe")
+		return strings.HasSuffix(strings.ToLower(entry.Name()), ".exe"), nil
 	}
-	// On non-Windows we let exec.Command fail later if the file is not executable.
-	return true
+	i, err := entry.Info()
+	if err != nil {
+		return false, err
+	}
+	return i.Mode()&0111 != 0, nil
 }

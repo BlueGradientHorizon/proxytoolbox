@@ -75,19 +75,19 @@ func main() {
 		return
 	}
 
-	var configsConnUris []string
+	var configsUris []string
 
 	content := strings.TrimSpace(string(data))
 	for line := range strings.SplitSeq(content, "\n") {
-		configsConnUris = append(configsConnUris, line)
+		configsUris = append(configsUris, line)
 	}
 
-	fmt.Println("before dedup:", len(configsConnUris))
-	configsConnUris = utils.DeduplicateConnUris(configsConnUris)
-	fmt.Println("after dedup:", len(configsConnUris))
+	fmt.Println("before dedup:", len(configsUris))
+	configsUris = utils.NaiveDeduplicateConfigsUris(configsUris)
+	fmt.Println("after dedup:", len(configsUris))
 
 	parsingErrorsMap := make(map[string]int)
-	for _, connUri := range configsConnUris {
+	for _, connUri := range configsUris {
 		p, err := parsers.ParseConfig(connUri)
 		if err != nil {
 			parsingErrorsMap[err.Error()]++
@@ -117,19 +117,19 @@ func main() {
 	})
 	if err != nil {
 		fmt.Printf("Failed to create test runner: %v\n", err)
-		os.Exit(-1)
+		os.Exit(1)
 	}
 	defer runner.Close()
 
 	latencyResults, taggedConfigs, ltErr := runLatencyTest(ctx, configs, ltSettings, runner)
 	if ltErr != nil {
 		fmt.Printf("Latency test error: %v\n", ltErr)
-		os.Exit(-1)
+		os.Exit(1)
 	}
 
 	if len(latencyResults) == 0 {
 		fmt.Println("No good results")
-		os.Exit(-1)
+		os.Exit(1)
 	}
 
 	// Write results to file
@@ -151,9 +151,13 @@ func main() {
 // Writes successful latency test results to out.txt
 func writeResultsToFile(sortedResults []testers.LatencyTestResult, configs []parsers.ProxyConfig) {
 	success := 0
-	f, _ := os.Create("out.txt")
-	w := bufio.NewWriter(f)
+	f, err := os.Create("out.txt")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to create output: %v\n", err)
+		return
+	}
 	defer f.Close()
+	w := bufio.NewWriter(f)
 
 	for _, r := range sortedResults {
 		if r.Error == nil {
@@ -162,7 +166,7 @@ func writeResultsToFile(sortedResults []testers.LatencyTestResult, configs []par
 				return p.Config.Tag == r.Tag
 			})
 			if i == -1 {
-				i = 0
+				println("result tag is missing!!! " + r.Tag)
 			}
 			w.WriteString(configs[i].ConnURI + "\n")
 		}

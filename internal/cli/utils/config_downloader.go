@@ -48,6 +48,12 @@ func DownloadConfigs(inputFile string, outputFile string, timeout time.Duration)
 	downloadSuccessCount := 0
 	allConfigsCount := 0
 
+	outF, err := os.OpenFile(outputFile, os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		fmt.Printf("    -> Error opening output file for append: %v\n", err)
+		return
+	}
+
 	for _, url := range links {
 		fmt.Printf("Processing: %s\n", url)
 
@@ -57,7 +63,8 @@ func DownloadConfigs(inputFile string, outputFile string, timeout time.Duration)
 			continue
 		}
 
-		body, err := io.ReadAll(resp.Body)
+		const maxSubSize = 64 * 1024 * 1024
+		body, err := io.ReadAll(io.LimitReader(resp.Body, maxSubSize))
 		resp.Body.Close()
 		if err != nil || resp.StatusCode != http.StatusOK {
 			fmt.Printf("    -> Error reading response from %s. Skipping.\n", url)
@@ -66,24 +73,20 @@ func DownloadConfigs(inputFile string, outputFile string, timeout time.Duration)
 
 		content := string(body)
 
-		decoded, err := base64.StdEncoding.DecodeString(content)
-		if err == nil {
-			content = string(decoded)
-		} else {
-			decoded, err = base64.RawStdEncoding.DecodeString(content)
-			if err == nil {
+		encodings := []*base64.Encoding{
+			base64.StdEncoding, base64.RawStdEncoding,
+			base64.URLEncoding, base64.RawURLEncoding,
+		}
+
+		for _, enc := range encodings {
+			if decoded, err := enc.DecodeString(content); err == nil {
 				content = string(decoded)
+				break
 			}
 		}
 
 		lines := strings.Split(content, "\n")
 		configCount := 0
-
-		outF, err := os.OpenFile(outputFile, os.O_APPEND|os.O_WRONLY, 0644)
-		if err != nil {
-			fmt.Printf("    -> Error opening output file for append: %v\n", err)
-			continue
-		}
 
 		for _, line := range lines {
 			line = strings.TrimSpace(line)
@@ -96,10 +99,13 @@ func DownloadConfigs(inputFile string, outputFile string, timeout time.Duration)
 			// }
 			if strings.Contains(line, "://") {
 				configCount++
-				outF.WriteString(line + "\n")
+				_, err := outF.WriteString(line + "\n")
+				if err != nil {
+					fmt.Printf("Error writing to file: %s\n", outputFile)
+					return
+				}
 			}
 		}
-		outF.Close()
 
 		allConfigsCount += configCount
 		downloadSuccessCount++
@@ -108,6 +114,11 @@ func DownloadConfigs(inputFile string, outputFile string, timeout time.Duration)
 
 	fmt.Println("---")
 	fmt.Printf("Successfully concatenated %d subscriptions. Found configs: %d.\n", downloadSuccessCount, allConfigsCount)
+	err = outF.Close()
+	if err != nil {
+		fmt.Printf("Error when closing file: %s\n", outputFile)
+		return
+	}
 	fmt.Printf("Final configurations saved to: %s\n", outputFile)
 	fmt.Println("---")
 }

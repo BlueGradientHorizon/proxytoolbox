@@ -49,6 +49,7 @@ func (t *sbTester) Validate(ctx context.Context, configs []*core.OutboundConfig,
 			})
 			continue
 		}
+		// TODO: check if it's possible to validate by batches AND be able to get a failed list
 		tmp, err := newBoxInstance(ctx, []option.Outbound{*sbOut})
 		if err != nil {
 			validationErrors = append(validationErrors, ipcprotocol.ValidationError{
@@ -225,7 +226,6 @@ func (t *sbTester) TestSpeed(ctx context.Context, settings ipcprotocol.SpeedSett
 		instance.Close()
 		return err
 	}
-	defer instance.Close()
 
 	sbOuts := instance.Outbound().Outbounds()
 	proxies := make([]testers.ProxyInfo, 0, len(sbOuts))
