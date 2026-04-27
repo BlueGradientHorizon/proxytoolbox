@@ -6,7 +6,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"slices"
 	"strings"
 	"time"
 
@@ -159,16 +158,20 @@ func writeResultsToFile(sortedResults []testers.LatencyTestResult, configs []par
 	defer f.Close()
 	w := bufio.NewWriter(f)
 
+	tagToURI := make(map[string]string, len(configs))
+	for _, p := range configs {
+		if p.Config != nil {
+			tagToURI[p.Config.Tag] = p.ConnURI
+		}
+	}
 	for _, r := range sortedResults {
 		if r.Error == nil {
 			success++
-			i := slices.IndexFunc(configs, func(p parsers.ProxyConfig) bool {
-				return p.Config.Tag == r.Tag
-			})
-			if i == -1 {
+			if uri, ok := tagToURI[r.Tag]; ok {
+				w.WriteString(uri + "\n")
+			} else {
 				println("result tag is missing!!! " + r.Tag)
 			}
-			w.WriteString(configs[i].ConnURI + "\n")
 		}
 	}
 	w.Flush()

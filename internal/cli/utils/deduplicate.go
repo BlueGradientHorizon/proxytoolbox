@@ -9,8 +9,8 @@ func NaiveDeduplicateConfigsUris(connUris []string) []string {
 
 	for _, connUri := range connUris {
 		u := connUri
-		if strings.Count(u, "#") == 1 {
-			u = strings.Split(u, "#")[0]
+		if idx := strings.IndexByte(u, '#'); idx != -1 {
+			u = u[:idx]
 		}
 		if _, exists := seen[u]; !exists {
 			seen[u] = struct{}{}

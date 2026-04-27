@@ -60,14 +60,17 @@ func runLatencyTest(ctx context.Context, configs []parsers.ProxyConfig, ltSettin
 	}
 
 	// Filter configs to match successful results
+	configMap := make(map[string]parsers.ProxyConfig, len(configs))
+	for _, p := range configs {
+		if p.Config != nil {
+			configMap[p.Config.Tag] = p
+		}
+	}
 	validConfigs := make([]parsers.ProxyConfig, 0, len(testResults.Results))
 	for _, result := range testResults.Results {
 		if result.Error == nil {
-			for _, p := range configs {
-				if p.Config != nil && p.Config.Tag == result.Tag {
-					validConfigs = append(validConfigs, p)
-					break
-				}
+			if p, ok := configMap[result.Tag]; ok {
+				validConfigs = append(validConfigs, p)
 			}
 		}
 	}

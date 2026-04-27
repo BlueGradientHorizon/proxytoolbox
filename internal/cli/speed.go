@@ -22,9 +22,8 @@ type SpeedTestSettings struct {
 
 func runSpeedTest(ctx context.Context, configs []parsers.ProxyConfig, stSettings SpeedTestSettings, runner *testrunner.TestRunner) ([]testers.SpeedTestResult, []parsers.ProxyConfig, error) {
 	// Limit configs based on test limit
-	limited := make([]parsers.ProxyConfig, stSettings.TestLimit)
-	copy(limited, configs)
-	configs = limited
+	limit := min(stSettings.TestLimit, len(configs))
+	configs = configs[:limit]
 
 	config := testrunner.SpeedTestRunnerSettings{
 		BaseTestRunnerSettings: testrunner.BaseTestRunnerSettings{
