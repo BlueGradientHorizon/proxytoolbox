@@ -10,10 +10,10 @@ import (
 	"time"
 
 	"github.com/bluegradienthorizon/proxytoolbox/internal/cli/utils"
-	"github.com/bluegradienthorizon/proxytoolbox/measure"
 	"github.com/bluegradienthorizon/proxytoolbox/parsers"
 	"github.com/bluegradienthorizon/proxytoolbox/registry"
 	"github.com/bluegradienthorizon/proxytoolbox/runner"
+	"github.com/bluegradienthorizon/proxytoolbox/worker"
 )
 
 func main() {
@@ -36,7 +36,7 @@ func main() {
 		Concurrency: 1,
 		Rounds:      1,
 		Timeout:     10 * time.Second,
-		Mode:        measure.Download,
+		Mode:        worker.Download,
 		TestLimit:   5,
 		TargetBytes: 10 * 1024 * 1024,
 	}
@@ -148,7 +148,7 @@ func main() {
 }
 
 // Writes successful latency test results to out.txt
-func writeResultsToFile(sortedResults []measure.LatencyTestResult, configs []parsers.ProxyConfig) {
+func writeResultsToFile(sortedResults []worker.LatencyTestResult, configs []parsers.ProxyConfig) {
 	success := 0
 	f, err := os.Create("out.txt")
 	if err != nil {

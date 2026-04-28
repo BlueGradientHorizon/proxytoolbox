@@ -10,7 +10,6 @@ import (
 	"github.com/bluegradienthorizon/proxytoolbox/core"
 	"github.com/bluegradienthorizon/proxytoolbox/internal/workers/utils"
 	"github.com/bluegradienthorizon/proxytoolbox/worker"
-	"github.com/bluegradienthorizon/proxytoolbox/measure"
 
 	box "github.com/sagernet/sing-box"
 	"github.com/sagernet/sing-box/include"
@@ -151,12 +150,12 @@ func (t *sbWorker) TestLatency(ctx context.Context, settings worker.LatencySetti
 	}
 
 	sbOuts := instance.Outbound().Outbounds()
-	proxies := make([]measure.ProxyInfo, 0, len(sbOuts))
-	dialers := make([]measure.DialerFunc, 0, len(sbOuts))
+	proxies := make([]worker.ProxyInfo, 0, len(sbOuts))
+	dialers := make([]worker.DialerFunc, 0, len(sbOuts))
 
 	for _, sbOut := range sbOuts {
 		tag := sbOut.Tag()
-		proxies = append(proxies, measure.ProxyInfo{Tag: tag, Type: sbOut.Type()})
+		proxies = append(proxies, worker.ProxyInfo{Tag: tag, Type: sbOut.Type()})
 		o := sbOut
 		dialers = append(dialers, func(ctx context.Context, network, addr string) (net.Conn, error) {
 			return o.DialContext(ctx, network, metadata.ParseSocksaddr(addr))
@@ -164,7 +163,7 @@ func (t *sbWorker) TestLatency(ctx context.Context, settings worker.LatencySetti
 	}
 
 	timeout := time.Duration(settings.TimeoutMs) * time.Millisecond
-	lt, err := measure.NewLatencyTest(ctx, measure.LatencyTestSettings{
+	lt, err := worker.NewLatencyTest(ctx, worker.LatencyTestSettings{
 		TestURL:     settings.TestURL,
 		Timeout:     timeout,
 		Concurrency: settings.Concurrency,
@@ -174,7 +173,7 @@ func (t *sbWorker) TestLatency(ctx context.Context, settings worker.LatencySetti
 		return err
 	}
 
-	ch := make(chan measure.LatencyTestResult, len(proxies))
+	ch := make(chan worker.LatencyTestResult, len(proxies))
 	wait := lt.Run(ch)
 	for range proxies {
 		r := <-ch
@@ -227,38 +226,38 @@ func (t *sbWorker) TestSpeed(ctx context.Context, settings worker.SpeedSettings,
 	}
 
 	sbOuts := instance.Outbound().Outbounds()
-	proxies := make([]measure.ProxyInfo, 0, len(sbOuts))
-	dialers := make([]measure.DialerFunc, 0, len(sbOuts))
+	proxies := make([]worker.ProxyInfo, 0, len(sbOuts))
+	dialers := make([]worker.DialerFunc, 0, len(sbOuts))
 
 	for _, sbOut := range sbOuts {
 		tag := sbOut.Tag()
-		proxies = append(proxies, measure.ProxyInfo{Tag: tag, Type: sbOut.Type()})
+		proxies = append(proxies, worker.ProxyInfo{Tag: tag, Type: sbOut.Type()})
 		o := sbOut
 		dialers = append(dialers, func(ctx context.Context, network, addr string) (net.Conn, error) {
 			return o.DialContext(ctx, network, metadata.ParseSocksaddr(addr))
 		})
 	}
 
-	mode := measure.Download
+	mode := worker.Download
 	if settings.Mode == "upload" {
-		mode = measure.Upload
+		mode = worker.Upload
 	}
 	timeout := time.Duration(settings.TimeoutMs) * time.Millisecond
 
-	stSettings := measure.SpeedTestSettings{
+	stSettings := worker.SpeedTestSettings{
 		Mode:        mode,
-		Provider:    measure.CloudflareProvider,
+		Provider:    worker.CloudflareProvider,
 		Timeout:     timeout,
 		TargetBytes: settings.TargetBytes,
 		Concurrency: settings.Concurrency,
 	}
-	st, err := measure.NewSpeedTest(ctx, stSettings, proxies, dialers, CreateTLSConfigProvider())
+	st, err := worker.NewSpeedTest(ctx, stSettings, proxies, dialers, CreateTLSConfigProvider())
 	if err != nil {
 		instance.Close()
 		return err
 	}
 
-	ch := make(chan measure.SpeedTestResult, len(proxies))
+	ch := make(chan worker.SpeedTestResult, len(proxies))
 	wait := st.Run(ch)
 	for range proxies {
 		r := <-ch

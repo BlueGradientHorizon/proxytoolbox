@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/bluegradienthorizon/proxytoolbox/internal/cli/utils"
-	"github.com/bluegradienthorizon/proxytoolbox/measure"
 	"github.com/bluegradienthorizon/proxytoolbox/parsers"
 	"github.com/bluegradienthorizon/proxytoolbox/runner"
 	"github.com/bluegradienthorizon/proxytoolbox/worker"
@@ -18,8 +17,8 @@ type LatencyTestSettings struct {
 	Rounds      int
 }
 
-func runLatencyTest(ctx context.Context, configs []parsers.ProxyConfig, ltSettings LatencyTestSettings, testRunner *runner.TestRunner) ([]measure.LatencyTestResult, []parsers.ProxyConfig, error) {
-	var printerChan chan measure.LatencyTestResult
+func runLatencyTest(ctx context.Context, configs []parsers.ProxyConfig, ltSettings LatencyTestSettings, testRunner *runner.TestRunner) ([]worker.LatencyTestResult, []parsers.ProxyConfig, error) {
+	var printerChan chan worker.LatencyTestResult
 	var printer *utils.StatsPrinter
 	var printDone chan bool
 
@@ -38,12 +37,12 @@ func runLatencyTest(ctx context.Context, configs []parsers.ProxyConfig, ltSettin
 			},
 			RoundStartedCallback: func(round int, outboundsLen int) {
 				println(fmt.Sprintf("round %d/%d", round+1, ltSettings.Rounds))
-				printerChan = make(chan measure.LatencyTestResult, outboundsLen)
+				printerChan = make(chan worker.LatencyTestResult, outboundsLen)
 				printer = utils.NewStatsPrinter(outboundsLen, printerChan)
 				printDone = make(chan bool)
 				go printer.Start(printDone)
 			},
-			ProgressCallback: func(result measure.LatencyTestResult) {
+			ProgressCallback: func(result worker.LatencyTestResult) {
 				printerChan <- result
 			},
 			RoundEndedCallback: func(round int) {
@@ -51,7 +50,7 @@ func runLatencyTest(ctx context.Context, configs []parsers.ProxyConfig, ltSettin
 				close(printerChan)
 			},
 		},
-		TestURL: measure.Google204,
+		TestURL: worker.Google204,
 	}
 
 	testResults, err := testRunner.RunLatencyTests(ctx, configs, config)

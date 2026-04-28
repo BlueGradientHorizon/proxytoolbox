@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/bluegradienthorizon/proxytoolbox/measure"
 	"github.com/bluegradienthorizon/proxytoolbox/parsers"
 	"github.com/bluegradienthorizon/proxytoolbox/runner"
+	"github.com/bluegradienthorizon/proxytoolbox/worker"
 )
 
 // SpeedTestSettings holds configuration for speed tests
@@ -15,12 +15,12 @@ type SpeedTestSettings struct {
 	Concurrency int
 	Rounds      int
 	Timeout     time.Duration
-	Mode        measure.SpeedTestMode
+	Mode        worker.SpeedTestMode
 	TestLimit   int
 	TargetBytes int64
 }
 
-func runSpeedTest(ctx context.Context, configs []parsers.ProxyConfig, stSettings SpeedTestSettings, testRunner *runner.TestRunner) ([]measure.SpeedTestResult, []parsers.ProxyConfig, error) {
+func runSpeedTest(ctx context.Context, configs []parsers.ProxyConfig, stSettings SpeedTestSettings, testRunner *runner.TestRunner) ([]worker.SpeedTestResult, []parsers.ProxyConfig, error) {
 	// Limit configs based on test limit
 	limit := min(stSettings.TestLimit, len(configs))
 	configs = configs[:limit]
@@ -35,9 +35,9 @@ func runSpeedTest(ctx context.Context, configs []parsers.ProxyConfig, stSettings
 			RoundStartedCallback: func(round, outboundsLen int) {
 				println(fmt.Sprintf("round %d/%d", round+1, stSettings.Rounds))
 			},
-			ProgressCallback: func(result measure.SpeedTestResult) {
+			ProgressCallback: func(result worker.SpeedTestResult) {
 				var t string
-				if stSettings.Mode == measure.Download {
+				if stSettings.Mode == worker.Download {
 					t = "download"
 				} else {
 					t = "upload"
@@ -54,7 +54,7 @@ func runSpeedTest(ctx context.Context, configs []parsers.ProxyConfig, stSettings
 		},
 		TargetBytes: stSettings.TargetBytes,
 		Mode:        stSettings.Mode,
-		Provider:    measure.CloudflareProvider,
+		Provider:    worker.CloudflareProvider,
 	}
 
 	results, err := testRunner.RunSpeedTests(ctx, configs, config)

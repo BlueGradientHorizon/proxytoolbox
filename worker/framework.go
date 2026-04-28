@@ -110,12 +110,12 @@ func handle(conn net.Conn, worker Worker) {
 				err = worker.Validate(ctx, toCoreConfigs(req.Configs), sw.Write)
 			case RequestTypeTest:
 				switch req.TestType {
-				case LatencyTest:
+				case TestTypeLatency:
 					var s LatencySettings
 					if err = json.Unmarshal(req.Settings, &s); err == nil {
 						err = worker.TestLatency(ctx, s, req.Tags, sw.Write)
 					}
-				case SpeedTest:
+				case TestTypeSpeed:
 					var s SpeedSettings
 					if err = json.Unmarshal(req.Settings, &s); err == nil {
 						err = worker.TestSpeed(ctx, s, req.Tags, sw.Write)

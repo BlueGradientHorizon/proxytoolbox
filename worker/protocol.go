@@ -10,8 +10,8 @@ import (
 type TestType string
 
 const (
-	LatencyTest TestType = "latency"
-	SpeedTest   TestType = "speed"
+	TestTypeLatency TestType = "latency"
+	TestTypeSpeed   TestType = "speed"
 )
 
 type RequestType string

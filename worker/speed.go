@@ -1,4 +1,4 @@
-package measure
+package worker
 
 import (
 	"context"
@@ -7,11 +7,6 @@ import (
 	"io"
 	"net/http"
 	"time"
-)
-
-const (
-	SpeedCloudflareDown = "https://speed.cloudflare.com/__down"
-	SpeedCloudflareUp   = "https://speed.cloudflare.com/__up"
 )
 
 // SpeedTestResult contains the result of a speed test for a single proxy.
@@ -26,8 +21,8 @@ type SpeedTestResult struct {
 type SpeedTestMode int
 
 const (
-	Download SpeedTestMode = iota
-	Upload
+	SpeedTestModeDownload SpeedTestMode = iota
+	SpeedTestModeUpload
 )
 
 // SpeedTestProvider defines how to construct speed test requests.
@@ -45,15 +40,15 @@ var CloudflareProvider = SpeedTestProvider{
 		)
 		var u string
 		switch mode {
-		case Download:
+		case SpeedTestModeDownload:
 			u = fmt.Sprintf("%s?bytes=%d", Down, targetBytes)
-		case Upload:
+		case SpeedTestModeUpload:
 			u = Up
 		}
 		return u
 	},
 	ModifyRequest: func(req *http.Request, mode SpeedTestMode, targetBytes int64) {
-		if mode == Upload {
+		if mode == SpeedTestModeUpload {
 			req.ContentLength = targetBytes
 		}
 	},
@@ -71,7 +66,7 @@ type SpeedTestSettings struct {
 // NewDownloadTestSettings creates default download speed test settings.
 func NewDownloadTestSettings() SpeedTestSettings {
 	return SpeedTestSettings{
-		Mode:        Download,
+		Mode:        SpeedTestModeDownload,
 		Provider:    CloudflareProvider,
 		Timeout:     20 * time.Second,
 		TargetBytes: 10 * 1024 * 1024,
@@ -81,7 +76,7 @@ func NewDownloadTestSettings() SpeedTestSettings {
 // NewUploadTestSettings creates default upload speed test settings.
 func NewUploadTestSettings() SpeedTestSettings {
 	return SpeedTestSettings{
-		Mode:        Upload,
+		Mode:        SpeedTestModeUpload,
 		Provider:    CloudflareProvider,
 		Timeout:     20 * time.Second,
 		TargetBytes: 10 * 1024 * 1024,
@@ -162,9 +157,9 @@ func (t *SpeedTest) runTest(ctx context.Context, item speedTestItem) (float64, e
 	var body io.Reader
 
 	switch t.settings.Mode {
-	case Download:
+	case SpeedTestModeDownload:
 		method = http.MethodGet
-	case Upload:
+	case SpeedTestModeUpload:
 		method = http.MethodPost
 		body = io.LimitReader(zeroReader{}, t.settings.TargetBytes)
 	}
@@ -189,7 +184,7 @@ func (t *SpeedTest) runTest(ctx context.Context, item speedTestItem) (float64, e
 	}
 
 	var bytesProcessed int64
-	if t.settings.Mode == Download {
+	if t.settings.Mode == SpeedTestModeDownload {
 		bytesProcessed, err = io.CopyN(io.Discard, resp.Body, t.settings.TargetBytes)
 		if err != nil {
 			return 0, err

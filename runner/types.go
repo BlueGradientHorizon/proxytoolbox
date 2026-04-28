@@ -3,7 +3,6 @@ package runner
 import (
 	"time"
 
-	"github.com/bluegradienthorizon/proxytoolbox/measure"
 	"github.com/bluegradienthorizon/proxytoolbox/worker"
 )
 
@@ -75,10 +74,10 @@ type SpeedTestRunnerSettings struct {
 	TargetBytes int64
 
 	// Mode specifies the speed test mode (Download or Upload)
-	Mode measure.SpeedTestMode
+	Mode worker.SpeedTestMode
 
 	// Provider specifies which speed test provider to use
-	Provider measure.SpeedTestProvider
+	Provider worker.SpeedTestProvider
 }
 
 // BaseTestResults contains common fields shared by all test result types.
@@ -101,7 +100,7 @@ type LatencyTestResults struct {
 
 	// Results contains all test results from the final round
 	// Includes both successful and failed tests depending on configuration
-	Results []measure.LatencyTestResult
+	Results []worker.LatencyTestResult
 }
 
 // SpeedTestResults contains aggregated results from speed testing.
@@ -111,5 +110,5 @@ type SpeedTestResults struct {
 
 	// Results contains all test results
 	// Includes both successful and failed tests
-	Results []measure.SpeedTestResult
+	Results []worker.SpeedTestResult
 }

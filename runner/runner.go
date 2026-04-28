@@ -7,7 +7,6 @@ import (
 	"sync"
 
 	"github.com/bluegradienthorizon/proxytoolbox/core"
-	"github.com/bluegradienthorizon/proxytoolbox/measure"
 	"github.com/bluegradienthorizon/proxytoolbox/parsers"
 	"github.com/bluegradienthorizon/proxytoolbox/worker"
 )
@@ -61,9 +60,9 @@ func (tr *TestRunner) Close() error {
 // RunLatencyTests executes latency tests with automatic lifecycle management.
 func (tr *TestRunner) RunLatencyTests(ctx context.Context, configs []parsers.ProxyConfig, ltRunnerSettings LatencyTestRunnerSettings) (*LatencyTestResults, error) {
 	base := ltRunnerSettings.getBaseSettings()
-	var progressCb func(measure.LatencyTestResult)
+	var progressCb func(worker.LatencyTestResult)
 	if base.ProgressCallback != nil {
-		progressCb, _ = base.ProgressCallback.(func(measure.LatencyTestResult))
+		progressCb, _ = base.ProgressCallback.(func(worker.LatencyTestResult))
 	}
 
 	res, err := runIPCTests(
@@ -71,7 +70,7 @@ func (tr *TestRunner) RunLatencyTests(ctx context.Context, configs []parsers.Pro
 		func(currentConfigs []parsers.ProxyConfig, c *LatencyTestRunnerSettings) worker.Request {
 			testURL := c.TestURL
 			if testURL == "" {
-				testURL = measure.Google204
+				testURL = worker.Google204
 			}
 			tags := make([]string, len(currentConfigs))
 			for i, p := range currentConfigs {
@@ -79,7 +78,7 @@ func (tr *TestRunner) RunLatencyTests(ctx context.Context, configs []parsers.Pro
 			}
 			return worker.Request{
 				Type:     worker.RequestTypeTest,
-				TestType: worker.LatencyTest,
+				TestType: worker.TestTypeLatency,
 				Tags:     tags,
 				Settings: mustMarshal(worker.LatencySettings{
 					TimeoutMs:   int(c.Timeout.Milliseconds()),
@@ -88,17 +87,17 @@ func (tr *TestRunner) RunLatencyTests(ctx context.Context, configs []parsers.Pro
 				}),
 			}
 		},
-		func(r worker.Response) measure.LatencyTestResult {
+		func(r worker.Response) worker.LatencyTestResult {
 			var err error
 			if r.Error != "" {
 				err = fmt.Errorf("%s", r.Error)
 			}
-			return measure.LatencyTestResult{Tag: r.Tag, Delay: r.LatencyMs, Error: err}
+			return worker.LatencyTestResult{Tag: r.Tag, Delay: r.LatencyMs, Error: err}
 		},
 		progressCb,
-		func(r measure.LatencyTestResult) bool { return r.Error == nil && r.Delay > 0 },
-		func(r measure.LatencyTestResult) string { return r.Tag },
-		func(rs []measure.LatencyTestResult, ve []worker.ValidationError, sort bool) any {
+		func(r worker.LatencyTestResult) bool { return r.Error == nil && r.Delay > 0 },
+		func(r worker.LatencyTestResult) string { return r.Tag },
+		func(rs []worker.LatencyTestResult, ve []worker.ValidationError, sort bool) any {
 			return aggregateLatencyResults(rs, ve, sort)
 		},
 	)
@@ -111,13 +110,13 @@ func (tr *TestRunner) RunLatencyTests(ctx context.Context, configs []parsers.Pro
 // RunSpeedTests executes speed tests with automatic lifecycle management.
 func (tr *TestRunner) RunSpeedTests(ctx context.Context, configs []parsers.ProxyConfig, stRunnerSettings SpeedTestRunnerSettings) (*SpeedTestResults, error) {
 	base := stRunnerSettings.getBaseSettings()
-	var progressCb func(measure.SpeedTestResult)
+	var progressCb func(worker.SpeedTestResult)
 	if base.ProgressCallback != nil {
-		progressCb, _ = base.ProgressCallback.(func(measure.SpeedTestResult))
+		progressCb, _ = base.ProgressCallback.(func(worker.SpeedTestResult))
 	}
 
 	mode := "download"
-	if stRunnerSettings.Mode == measure.Upload {
+	if stRunnerSettings.Mode == worker.SpeedTestModeUpload {
 		mode = "upload"
 	}
 
@@ -130,7 +129,7 @@ func (tr *TestRunner) RunSpeedTests(ctx context.Context, configs []parsers.Proxy
 			}
 			return worker.Request{
 				Type:     worker.RequestTypeTest,
-				TestType: worker.SpeedTest,
+				TestType: worker.TestTypeSpeed,
 				Tags:     tags,
 				Settings: mustMarshal(worker.SpeedSettings{
 					Mode:        mode,
@@ -140,17 +139,17 @@ func (tr *TestRunner) RunSpeedTests(ctx context.Context, configs []parsers.Proxy
 				}),
 			}
 		},
-		func(r worker.Response) measure.SpeedTestResult {
+		func(r worker.Response) worker.SpeedTestResult {
 			var err error
 			if r.Error != "" {
 				err = fmt.Errorf("%s", r.Error)
 			}
-			return measure.SpeedTestResult{Tag: r.Tag, Speed: r.Speed, Error: err}
+			return worker.SpeedTestResult{Tag: r.Tag, Speed: r.Speed, Error: err}
 		},
 		progressCb,
-		func(r measure.SpeedTestResult) bool { return r.Error == nil && r.Speed > 0 },
-		func(r measure.SpeedTestResult) string { return r.Tag },
-		func(rs []measure.SpeedTestResult, ve []worker.ValidationError, sort bool) any {
+		func(r worker.SpeedTestResult) bool { return r.Error == nil && r.Speed > 0 },
+		func(r worker.SpeedTestResult) string { return r.Tag },
+		func(rs []worker.SpeedTestResult, ve []worker.ValidationError, sort bool) any {
 			return aggregateSpeedResults(rs, ve, sort)
 		},
 	)
@@ -343,7 +342,7 @@ func sortTestResults[T any](results []T, isSuccess func(T) bool, shouldSwap func
 	}
 }
 
-func aggregateLatencyResults(results []measure.LatencyTestResult, validationErrors []worker.ValidationError, sortResults bool) *LatencyTestResults {
+func aggregateLatencyResults(results []worker.LatencyTestResult, validationErrors []worker.ValidationError, sortResults bool) *LatencyTestResults {
 	successCount := 0
 	failureCount := 0
 	for _, r := range results {
@@ -355,8 +354,8 @@ func aggregateLatencyResults(results []measure.LatencyTestResult, validationErro
 	}
 	if sortResults {
 		sortTestResults(results,
-			func(r measure.LatencyTestResult) bool { return r.Delay > 0 },
-			func(r1, r2 measure.LatencyTestResult) bool { return r1.Delay > r2.Delay })
+			func(r worker.LatencyTestResult) bool { return r.Delay > 0 },
+			func(r1, r2 worker.LatencyTestResult) bool { return r1.Delay > r2.Delay })
 	}
 	return &LatencyTestResults{
 		BaseTestResults: BaseTestResults{
@@ -367,7 +366,7 @@ func aggregateLatencyResults(results []measure.LatencyTestResult, validationErro
 	}
 }
 
-func aggregateSpeedResults(results []measure.SpeedTestResult, validationErrors []worker.ValidationError, sortResults bool) *SpeedTestResults {
+func aggregateSpeedResults(results []worker.SpeedTestResult, validationErrors []worker.ValidationError, sortResults bool) *SpeedTestResults {
 	successCount := 0
 	failureCount := 0
 	for _, r := range results {
@@ -379,8 +378,8 @@ func aggregateSpeedResults(results []measure.SpeedTestResult, validationErrors [
 	}
 	if sortResults {
 		sortTestResults(results,
-			func(r measure.SpeedTestResult) bool { return r.Speed > 0 },
-			func(r1, r2 measure.SpeedTestResult) bool { return r1.Speed < r2.Speed })
+			func(r worker.SpeedTestResult) bool { return r.Speed > 0 },
+			func(r1, r2 worker.SpeedTestResult) bool { return r1.Speed < r2.Speed })
 	}
 	return &SpeedTestResults{
 		BaseTestResults: BaseTestResults{
