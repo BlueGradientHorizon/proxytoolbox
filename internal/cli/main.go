@@ -36,7 +36,7 @@ func main() {
 		Concurrency: 1,
 		Rounds:      1,
 		Timeout:     10 * time.Second,
-		Mode:        worker.Download,
+		Mode:        worker.SpeedTestModeDownload,
 		TestLimit:   5,
 		TargetBytes: 10 * 1024 * 1024,
 	}

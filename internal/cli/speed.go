@@ -37,7 +37,7 @@ func runSpeedTest(ctx context.Context, configs []parsers.ProxyConfig, stSettings
 			},
 			ProgressCallback: func(result worker.SpeedTestResult) {
 				var t string
-				if stSettings.Mode == worker.Download {
+				if stSettings.Mode == worker.SpeedTestModeDownload {
 					t = "download"
 				} else {
 					t = "upload"
