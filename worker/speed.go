@@ -31,29 +31,6 @@ type SpeedTestProvider struct {
 	ModifyRequest func(req *http.Request, mode SpeedTestMode, targetBytes int64)
 }
 
-// CloudflareProvider is a speed test provider using Cloudflare's speed test endpoints.
-var CloudflareProvider = SpeedTestProvider{
-	GetURL: func(mode SpeedTestMode, targetBytes int64) string {
-		const (
-			Down = "https://speed.cloudflare.com/__down"
-			Up   = "https://speed.cloudflare.com/__up"
-		)
-		var u string
-		switch mode {
-		case SpeedTestModeDownload:
-			u = fmt.Sprintf("%s?bytes=%d", Down, targetBytes)
-		case SpeedTestModeUpload:
-			u = Up
-		}
-		return u
-	},
-	ModifyRequest: func(req *http.Request, mode SpeedTestMode, targetBytes int64) {
-		if mode == SpeedTestModeUpload {
-			req.ContentLength = targetBytes
-		}
-	},
-}
-
 // SpeedTestSettings configures the speed test behavior.
 type SpeedTestSettings struct {
 	Mode        SpeedTestMode
@@ -67,7 +44,6 @@ type SpeedTestSettings struct {
 func NewDownloadTestSettings() SpeedTestSettings {
 	return SpeedTestSettings{
 		Mode:        SpeedTestModeDownload,
-		Provider:    CloudflareProvider,
 		Timeout:     20 * time.Second,
 		TargetBytes: 10 * 1024 * 1024,
 	}
@@ -77,7 +53,6 @@ func NewDownloadTestSettings() SpeedTestSettings {
 func NewUploadTestSettings() SpeedTestSettings {
 	return SpeedTestSettings{
 		Mode:        SpeedTestModeUpload,
-		Provider:    CloudflareProvider,
 		Timeout:     20 * time.Second,
 		TargetBytes: 10 * 1024 * 1024,
 	}

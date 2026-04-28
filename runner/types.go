@@ -15,6 +15,34 @@ type RunnerSettings struct {
 	WorkerDebug bool
 }
 
+// ValidationError represents an error validating proxy configurations
+type ValidationError struct {
+	Tag   string
+	Error string
+}
+
+// LatencyTestResult contains the result of a latency test for a single proxy.
+type LatencyTestResult struct {
+	Tag   string
+	Delay int64
+	Error error
+}
+
+// SpeedTestResult contains the result of a speed test for a single proxy.
+type SpeedTestResult struct {
+	Tag   string
+	Speed float64
+	Error error
+}
+
+// SpeedTestMode indicates whether to test download or upload speed.
+type SpeedTestMode string
+
+const (
+	SpeedTestModeDownload SpeedTestMode = "download"
+	SpeedTestModeUpload   SpeedTestMode = "upload"
+)
+
 // BaseTestRunnerSettings contains common configuration fields shared by all test types.
 type BaseTestRunnerSettings struct {
 	// Timeout for individual tests
@@ -32,7 +60,7 @@ type BaseTestRunnerSettings struct {
 	// CoreCreatedCallback is called after core creation with validation errors
 	// It allows initialization of progress tracking with accurate totals
 	// Optional: can be nil if not needed
-	CoreCreatedCallback func(validationErrors []worker.ValidationError)
+	CoreCreatedCallback func(validationErrors []ValidationError)
 
 	// RoundStartedCallback is called at the start of each test round
 	// It receives the current round number (0-indexed)
@@ -74,7 +102,7 @@ type SpeedTestRunnerSettings struct {
 	TargetBytes int64
 
 	// Mode specifies the speed test mode (Download or Upload)
-	Mode worker.SpeedTestMode
+	Mode SpeedTestMode
 
 	// Provider specifies which speed test provider to use
 	Provider worker.SpeedTestProvider
@@ -90,7 +118,7 @@ type BaseTestResults struct {
 
 	// ValidationErrors is a list of tag-error pairs for failed configurations
 	// Collected during configuration validation before testing begins
-	ValidationErrors []worker.ValidationError
+	ValidationErrors []ValidationError
 }
 
 // LatencyTestResults contains aggregated results from latency testing.
@@ -100,7 +128,7 @@ type LatencyTestResults struct {
 
 	// Results contains all test results from the final round
 	// Includes both successful and failed tests depending on configuration
-	Results []worker.LatencyTestResult
+	Results []LatencyTestResult
 }
 
 // SpeedTestResults contains aggregated results from speed testing.
@@ -110,5 +138,5 @@ type SpeedTestResults struct {
 
 	// Results contains all test results
 	// Includes both successful and failed tests
-	Results []worker.SpeedTestResult
+	Results []SpeedTestResult
 }

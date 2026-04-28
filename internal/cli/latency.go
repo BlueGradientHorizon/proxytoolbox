@@ -7,8 +7,8 @@ import (
 
 	"github.com/bluegradienthorizon/proxytoolbox/internal/cli/utils"
 	"github.com/bluegradienthorizon/proxytoolbox/parsers"
+	"github.com/bluegradienthorizon/proxytoolbox/presets"
 	"github.com/bluegradienthorizon/proxytoolbox/runner"
-	"github.com/bluegradienthorizon/proxytoolbox/worker"
 )
 
 type LatencyTestSettings struct {
@@ -17,8 +17,8 @@ type LatencyTestSettings struct {
 	Rounds      int
 }
 
-func runLatencyTest(ctx context.Context, configs []parsers.ProxyConfig, ltSettings LatencyTestSettings, testRunner *runner.TestRunner) ([]worker.LatencyTestResult, []parsers.ProxyConfig, error) {
-	var printerChan chan worker.LatencyTestResult
+func runLatencyTest(ctx context.Context, configs []parsers.ProxyConfig, ltSettings LatencyTestSettings, testRunner *runner.TestRunner) ([]runner.LatencyTestResult, []parsers.ProxyConfig, error) {
+	var printerChan chan runner.LatencyTestResult
 	var printer *utils.StatsPrinter
 	var printDone chan bool
 
@@ -29,7 +29,7 @@ func runLatencyTest(ctx context.Context, configs []parsers.ProxyConfig, ltSettin
 			Concurrency:  ltSettings.Concurrency,
 			Timeout:      ltSettings.Timeout,
 			Rounds:       ltSettings.Rounds,
-			CoreCreatedCallback: func(validationErrors []worker.ValidationError) {
+			CoreCreatedCallback: func(validationErrors []runner.ValidationError) {
 				println("validation errors:")
 				for _, errPair := range validationErrors {
 					fmt.Printf("[%s] %s\n", errPair.Tag, errPair.Error)
@@ -37,12 +37,12 @@ func runLatencyTest(ctx context.Context, configs []parsers.ProxyConfig, ltSettin
 			},
 			RoundStartedCallback: func(round int, outboundsLen int) {
 				println(fmt.Sprintf("round %d/%d", round+1, ltSettings.Rounds))
-				printerChan = make(chan worker.LatencyTestResult, outboundsLen)
+				printerChan = make(chan runner.LatencyTestResult, outboundsLen)
 				printer = utils.NewStatsPrinter(outboundsLen, printerChan)
 				printDone = make(chan bool)
 				go printer.Start(printDone)
 			},
-			ProgressCallback: func(result worker.LatencyTestResult) {
+			ProgressCallback: func(result runner.LatencyTestResult) {
 				printerChan <- result
 			},
 			RoundEndedCallback: func(round int) {
@@ -50,7 +50,7 @@ func runLatencyTest(ctx context.Context, configs []parsers.ProxyConfig, ltSettin
 				close(printerChan)
 			},
 		},
-		TestURL: worker.Google204,
+		TestURL: presets.Google204,
 	}
 
 	testResults, err := testRunner.RunLatencyTests(ctx, configs, config)

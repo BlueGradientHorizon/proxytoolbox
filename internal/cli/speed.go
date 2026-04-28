@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/bluegradienthorizon/proxytoolbox/parsers"
+	"github.com/bluegradienthorizon/proxytoolbox/presets"
 	"github.com/bluegradienthorizon/proxytoolbox/runner"
-	"github.com/bluegradienthorizon/proxytoolbox/worker"
 )
 
 // SpeedTestSettings holds configuration for speed tests
@@ -15,15 +15,17 @@ type SpeedTestSettings struct {
 	Concurrency int
 	Rounds      int
 	Timeout     time.Duration
-	Mode        worker.SpeedTestMode
+	Mode        runner.SpeedTestMode
 	TestLimit   int
 	TargetBytes int64
 }
 
-func runSpeedTest(ctx context.Context, configs []parsers.ProxyConfig, stSettings SpeedTestSettings, testRunner *runner.TestRunner) ([]worker.SpeedTestResult, []parsers.ProxyConfig, error) {
+func runSpeedTest(ctx context.Context, configs []parsers.ProxyConfig, stSettings SpeedTestSettings, testRunner *runner.TestRunner) ([]runner.SpeedTestResult, []parsers.ProxyConfig, error) {
 	// Limit configs based on test limit
-	limit := min(stSettings.TestLimit, len(configs))
-	configs = configs[:limit]
+	if stSettings.TestLimit > 0 {
+		limit := min(stSettings.TestLimit, len(configs))
+		configs = configs[:limit]
+	}
 
 	config := runner.SpeedTestRunnerSettings{
 		BaseTestRunnerSettings: runner.BaseTestRunnerSettings{
@@ -35,9 +37,9 @@ func runSpeedTest(ctx context.Context, configs []parsers.ProxyConfig, stSettings
 			RoundStartedCallback: func(round, outboundsLen int) {
 				println(fmt.Sprintf("round %d/%d", round+1, stSettings.Rounds))
 			},
-			ProgressCallback: func(result worker.SpeedTestResult) {
+			ProgressCallback: func(result runner.SpeedTestResult) {
 				var t string
-				if stSettings.Mode == worker.SpeedTestModeDownload {
+				if stSettings.Mode == runner.SpeedTestModeDownload {
 					t = "download"
 				} else {
 					t = "upload"
@@ -54,7 +56,7 @@ func runSpeedTest(ctx context.Context, configs []parsers.ProxyConfig, stSettings
 		},
 		TargetBytes: stSettings.TargetBytes,
 		Mode:        stSettings.Mode,
-		Provider:    worker.CloudflareProvider,
+		Provider:    presets.CloudflareProvider,
 	}
 
 	results, err := testRunner.RunSpeedTests(ctx, configs, config)

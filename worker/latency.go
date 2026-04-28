@@ -9,13 +9,6 @@ import (
 	"time"
 )
 
-const (
-	Google204         = "https://www.google.com/generate_204"
-	GStatic204        = "https://www.gstatic.com/generate_204"
-	PlayGoogleAPIs204 = "https://play.googleapis.com/generate_204"
-	CPCloudflare204   = "https://cp.cloudflare.com/generate_204"
-)
-
 // ProxyInfo contains minimal information about a proxy for testing.
 // This is intentionally generic to avoid coupling to any specific proxy core.
 type ProxyInfo struct {
@@ -41,7 +34,6 @@ type LatencyTestSettings struct {
 // NewLatencyTestSettings creates default latency test settings.
 func NewLatencyTestSettings() LatencyTestSettings {
 	return LatencyTestSettings{
-		TestURL: Google204,
 		Timeout: 20 * time.Second,
 	}
 }

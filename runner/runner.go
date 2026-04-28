@@ -8,6 +8,7 @@ import (
 
 	"github.com/bluegradienthorizon/proxytoolbox/core"
 	"github.com/bluegradienthorizon/proxytoolbox/parsers"
+	"github.com/bluegradienthorizon/proxytoolbox/presets"
 	"github.com/bluegradienthorizon/proxytoolbox/worker"
 )
 
@@ -60,9 +61,9 @@ func (tr *TestRunner) Close() error {
 // RunLatencyTests executes latency tests with automatic lifecycle management.
 func (tr *TestRunner) RunLatencyTests(ctx context.Context, configs []parsers.ProxyConfig, ltRunnerSettings LatencyTestRunnerSettings) (*LatencyTestResults, error) {
 	base := ltRunnerSettings.getBaseSettings()
-	var progressCb func(worker.LatencyTestResult)
+	var progressCb func(LatencyTestResult)
 	if base.ProgressCallback != nil {
-		progressCb, _ = base.ProgressCallback.(func(worker.LatencyTestResult))
+		progressCb, _ = base.ProgressCallback.(func(LatencyTestResult))
 	}
 
 	res, err := runIPCTests(
@@ -70,7 +71,7 @@ func (tr *TestRunner) RunLatencyTests(ctx context.Context, configs []parsers.Pro
 		func(currentConfigs []parsers.ProxyConfig, c *LatencyTestRunnerSettings) worker.Request {
 			testURL := c.TestURL
 			if testURL == "" {
-				testURL = worker.Google204
+				testURL = presets.Google204
 			}
 			tags := make([]string, len(currentConfigs))
 			for i, p := range currentConfigs {
@@ -87,17 +88,17 @@ func (tr *TestRunner) RunLatencyTests(ctx context.Context, configs []parsers.Pro
 				}),
 			}
 		},
-		func(r worker.Response) worker.LatencyTestResult {
+		func(r worker.Response) LatencyTestResult {
 			var err error
 			if r.Error != "" {
 				err = fmt.Errorf("%s", r.Error)
 			}
-			return worker.LatencyTestResult{Tag: r.Tag, Delay: r.LatencyMs, Error: err}
+			return LatencyTestResult{Tag: r.Tag, Delay: r.LatencyMs, Error: err}
 		},
 		progressCb,
-		func(r worker.LatencyTestResult) bool { return r.Error == nil && r.Delay > 0 },
-		func(r worker.LatencyTestResult) string { return r.Tag },
-		func(rs []worker.LatencyTestResult, ve []worker.ValidationError, sort bool) any {
+		func(r LatencyTestResult) bool { return r.Error == nil && r.Delay > 0 },
+		func(r LatencyTestResult) string { return r.Tag },
+		func(rs []LatencyTestResult, ve []ValidationError, sort bool) any {
 			return aggregateLatencyResults(rs, ve, sort)
 		},
 	)
@@ -110,13 +111,13 @@ func (tr *TestRunner) RunLatencyTests(ctx context.Context, configs []parsers.Pro
 // RunSpeedTests executes speed tests with automatic lifecycle management.
 func (tr *TestRunner) RunSpeedTests(ctx context.Context, configs []parsers.ProxyConfig, stRunnerSettings SpeedTestRunnerSettings) (*SpeedTestResults, error) {
 	base := stRunnerSettings.getBaseSettings()
-	var progressCb func(worker.SpeedTestResult)
+	var progressCb func(SpeedTestResult)
 	if base.ProgressCallback != nil {
-		progressCb, _ = base.ProgressCallback.(func(worker.SpeedTestResult))
+		progressCb, _ = base.ProgressCallback.(func(SpeedTestResult))
 	}
 
 	mode := "download"
-	if stRunnerSettings.Mode == worker.SpeedTestModeUpload {
+	if stRunnerSettings.Mode == SpeedTestModeUpload {
 		mode = "upload"
 	}
 
@@ -127,6 +128,16 @@ func (tr *TestRunner) RunSpeedTests(ctx context.Context, configs []parsers.Proxy
 			for i, p := range currentConfigs {
 				tags[i] = p.Config.Tag
 			}
+
+			wMode := worker.SpeedTestModeDownload
+			if c.Mode == SpeedTestModeUpload {
+				wMode = worker.SpeedTestModeUpload
+			}
+			var testURL string
+			if c.Provider.GetURL != nil {
+				testURL = c.Provider.GetURL(wMode, c.TargetBytes)
+			}
+
 			return worker.Request{
 				Type:     worker.RequestTypeTest,
 				TestType: worker.TestTypeSpeed,
@@ -136,20 +147,21 @@ func (tr *TestRunner) RunSpeedTests(ctx context.Context, configs []parsers.Proxy
 					TimeoutMs:   int(c.Timeout.Milliseconds()),
 					TargetBytes: c.TargetBytes,
 					Concurrency: base.Concurrency,
+					TestURL:     testURL,
 				}),
 			}
 		},
-		func(r worker.Response) worker.SpeedTestResult {
+		func(r worker.Response) SpeedTestResult {
 			var err error
 			if r.Error != "" {
 				err = fmt.Errorf("%s", r.Error)
 			}
-			return worker.SpeedTestResult{Tag: r.Tag, Speed: r.Speed, Error: err}
+			return SpeedTestResult{Tag: r.Tag, Speed: r.Speed, Error: err}
 		},
 		progressCb,
-		func(r worker.SpeedTestResult) bool { return r.Error == nil && r.Speed > 0 },
-		func(r worker.SpeedTestResult) string { return r.Tag },
-		func(rs []worker.SpeedTestResult, ve []worker.ValidationError, sort bool) any {
+		func(r SpeedTestResult) bool { return r.Error == nil && r.Speed > 0 },
+		func(r SpeedTestResult) string { return r.Tag },
+		func(rs []SpeedTestResult, ve []ValidationError, sort bool) any {
 			return aggregateSpeedResults(rs, ve, sort)
 		},
 	)
@@ -173,7 +185,7 @@ func runIPCTests[TResult any, TSettings testSettings](
 	onProgress func(TResult),
 	isSuccess func(TResult) bool,
 	getTag func(TResult) string,
-	aggregate func([]TResult, []worker.ValidationError, bool) any,
+	aggregate func([]TResult, []ValidationError, bool) any,
 ) (any, error) {
 	base := settings.getBaseSettings()
 
@@ -190,7 +202,7 @@ func runIPCTests[TResult any, TSettings testSettings](
 	}
 
 	// --- Validation phase ---
-	var validationErrors []worker.ValidationError
+	var validationErrors []ValidationError
 
 	validateReq := worker.Request{
 		Type:    worker.RequestTypeValidate,
@@ -199,7 +211,10 @@ func runIPCTests[TResult any, TSettings testSettings](
 
 	err = proc.SendRequest(ctx, validateReq, func(r worker.Response) {
 		if r.Type == worker.ResponseTypeValidation {
-			validationErrors = r.ValidationErrors
+			validationErrors = make([]ValidationError, len(r.ValidationErrors))
+			for j, ve := range r.ValidationErrors {
+				validationErrors[j] = ValidationError{Tag: ve.Tag, Error: ve.Error}
+			}
 			if base.CoreCreatedCallback != nil {
 				base.CoreCreatedCallback(validationErrors)
 			}
@@ -342,7 +357,7 @@ func sortTestResults[T any](results []T, isSuccess func(T) bool, shouldSwap func
 	}
 }
 
-func aggregateLatencyResults(results []worker.LatencyTestResult, validationErrors []worker.ValidationError, sortResults bool) *LatencyTestResults {
+func aggregateLatencyResults(results []LatencyTestResult, validationErrors []ValidationError, sortResults bool) *LatencyTestResults {
 	successCount := 0
 	failureCount := 0
 	for _, r := range results {
@@ -354,8 +369,8 @@ func aggregateLatencyResults(results []worker.LatencyTestResult, validationError
 	}
 	if sortResults {
 		sortTestResults(results,
-			func(r worker.LatencyTestResult) bool { return r.Delay > 0 },
-			func(r1, r2 worker.LatencyTestResult) bool { return r1.Delay > r2.Delay })
+			func(r LatencyTestResult) bool { return r.Delay > 0 },
+			func(r1, r2 LatencyTestResult) bool { return r1.Delay > r2.Delay })
 	}
 	return &LatencyTestResults{
 		BaseTestResults: BaseTestResults{
@@ -366,7 +381,7 @@ func aggregateLatencyResults(results []worker.LatencyTestResult, validationError
 	}
 }
 
-func aggregateSpeedResults(results []worker.SpeedTestResult, validationErrors []worker.ValidationError, sortResults bool) *SpeedTestResults {
+func aggregateSpeedResults(results []SpeedTestResult, validationErrors []ValidationError, sortResults bool) *SpeedTestResults {
 	successCount := 0
 	failureCount := 0
 	for _, r := range results {
@@ -378,8 +393,8 @@ func aggregateSpeedResults(results []worker.SpeedTestResult, validationErrors []
 	}
 	if sortResults {
 		sortTestResults(results,
-			func(r worker.SpeedTestResult) bool { return r.Speed > 0 },
-			func(r1, r2 worker.SpeedTestResult) bool { return r1.Speed < r2.Speed })
+			func(r SpeedTestResult) bool { return r.Speed > 0 },
+			func(r1, r2 SpeedTestResult) bool { return r1.Speed < r2.Speed })
 	}
 	return &SpeedTestResults{
 		BaseTestResults: BaseTestResults{

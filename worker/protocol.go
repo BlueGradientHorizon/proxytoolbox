@@ -131,4 +131,5 @@ type SpeedSettings struct {
 	TimeoutMs   int    `json:"timeout_ms"`
 	TargetBytes int64  `json:"target_bytes"`
 	Concurrency int    `json:"concurrency"`
+	TestURL     string `json:"test_url,omitempty"`
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"net/http"
 	"sync"
 	"time"
 
@@ -238,15 +239,24 @@ func (t *sbWorker) TestSpeed(ctx context.Context, settings worker.SpeedSettings,
 		})
 	}
 
-	mode := worker.Download
+	mode := worker.SpeedTestModeDownload
 	if settings.Mode == "upload" {
-		mode = worker.Upload
+		mode = worker.SpeedTestModeUpload
 	}
 	timeout := time.Duration(settings.TimeoutMs) * time.Millisecond
 
 	stSettings := worker.SpeedTestSettings{
-		Mode:        mode,
-		Provider:    worker.CloudflareProvider,
+		Mode: mode,
+		Provider: worker.SpeedTestProvider{
+			GetURL: func(m worker.SpeedTestMode, b int64) string {
+				return settings.TestURL
+			},
+			ModifyRequest: func(req *http.Request, m worker.SpeedTestMode, b int64) {
+				if m == worker.SpeedTestModeUpload {
+					req.ContentLength = b
+				}
+			},
+		},
 		Timeout:     timeout,
 		TargetBytes: settings.TargetBytes,
 		Concurrency: settings.Concurrency,

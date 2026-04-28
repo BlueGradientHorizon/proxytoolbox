@@ -10,14 +10,17 @@ import (
 	"runtime"
 	"strings"
 	"time"
-
-	"github.com/bluegradienthorizon/proxytoolbox/worker"
 )
 
 type WorkerInfo struct {
 	Name    string
 	Version string
 	Path    string
+}
+
+type workerInfoJSON struct {
+	Name    string `json:"name"`
+	Version string `json:"version"`
 }
 
 type Registry struct {
@@ -77,7 +80,7 @@ func probe(path string) (*WorkerInfo, error) {
 	if err != nil {
 		return nil, err
 	}
-	var ci worker.CoreInfo
+	var ci workerInfoJSON
 	if err := json.Unmarshal(out, &ci); err != nil {
 		return nil, err
 	}
