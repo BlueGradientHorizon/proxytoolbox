@@ -1,4 +1,4 @@
-package testrunner
+package registry
 
 import (
 	"context"
@@ -11,25 +11,25 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bluegradienthorizon/proxytoolbox/pkg/ipcprotocol"
+	"github.com/bluegradienthorizon/proxytoolbox/worker"
 )
 
-type TesterInfo struct {
+type WorkerInfo struct {
 	Name    string
 	Version string
 	Path    string
 }
 
 type Registry struct {
-	entries map[string][]TesterInfo
+	entries map[string][]WorkerInfo
 }
 
 func NewRegistry() *Registry {
-	return &Registry{entries: make(map[string][]TesterInfo)}
+	return &Registry{entries: make(map[string][]WorkerInfo)}
 }
 
-// Discover scans the given directories for tester executables and probes them with --info.
-// Only considers files whose name contains "tester".
+// Discover scans the given directories for worker executables and probes them with --info.
+// Only considers files whose name contains "worker".
 func (r *Registry) Discover(paths ...string) error {
 	for _, dir := range paths {
 		dirEntry, err := os.ReadDir(dir)
@@ -41,8 +41,8 @@ func (r *Registry) Discover(paths ...string) error {
 				continue
 			}
 			name := e.Name()
-			// Only probe files that look like tester programs.
-			if !strings.Contains(strings.ToLower(name), "tester") {
+			// Only probe files that look like worker programs.
+			if !strings.Contains(strings.ToLower(name), "worker") {
 				continue
 			}
 			isExe, err := isExecutable(e)
@@ -63,10 +63,10 @@ func (r *Registry) Discover(paths ...string) error {
 	return nil
 }
 
-func (r *Registry) Get(name string) []TesterInfo { return r.entries[name] }
-func (r *Registry) All() map[string][]TesterInfo { return r.entries }
+func (r *Registry) Get(name string) []WorkerInfo { return r.entries[name] }
+func (r *Registry) All() map[string][]WorkerInfo { return r.entries }
 
-func probe(path string) (*TesterInfo, error) {
+func probe(path string) (*WorkerInfo, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
 
@@ -77,14 +77,14 @@ func probe(path string) (*TesterInfo, error) {
 	if err != nil {
 		return nil, err
 	}
-	var ci ipcprotocol.CoreInfo
+	var ci worker.CoreInfo
 	if err := json.Unmarshal(out, &ci); err != nil {
 		return nil, err
 	}
 	if ci.Name == "" {
-		return nil, fmt.Errorf("tester %s returned empty name", path)
+		return nil, fmt.Errorf("worker %s returned empty name", path)
 	}
-	return &TesterInfo{Name: ci.Name, Version: ci.Version, Path: path}, nil
+	return &WorkerInfo{Name: ci.Name, Version: ci.Version, Path: path}, nil
 }
 
 func isExecutable(entry os.DirEntry) (bool, error) {

@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/bluegradienthorizon/proxytoolbox/measure"
 	"github.com/bluegradienthorizon/proxytoolbox/parsers"
-	"github.com/bluegradienthorizon/proxytoolbox/testers"
-	"github.com/bluegradienthorizon/proxytoolbox/testrunner"
+	"github.com/bluegradienthorizon/proxytoolbox/runner"
 )
 
 // SpeedTestSettings holds configuration for speed tests
@@ -15,18 +15,18 @@ type SpeedTestSettings struct {
 	Concurrency int
 	Rounds      int
 	Timeout     time.Duration
-	Mode        testers.SpeedTestMode
+	Mode        measure.SpeedTestMode
 	TestLimit   int
 	TargetBytes int64
 }
 
-func runSpeedTest(ctx context.Context, configs []parsers.ProxyConfig, stSettings SpeedTestSettings, runner *testrunner.TestRunner) ([]testers.SpeedTestResult, []parsers.ProxyConfig, error) {
+func runSpeedTest(ctx context.Context, configs []parsers.ProxyConfig, stSettings SpeedTestSettings, testRunner *runner.TestRunner) ([]measure.SpeedTestResult, []parsers.ProxyConfig, error) {
 	// Limit configs based on test limit
 	limit := min(stSettings.TestLimit, len(configs))
 	configs = configs[:limit]
 
-	config := testrunner.SpeedTestRunnerSettings{
-		BaseTestRunnerSettings: testrunner.BaseTestRunnerSettings{
+	config := runner.SpeedTestRunnerSettings{
+		BaseTestRunnerSettings: runner.BaseTestRunnerSettings{
 			SortResults:  true,
 			FilterFailed: true,
 			Concurrency:  stSettings.Concurrency,
@@ -35,9 +35,9 @@ func runSpeedTest(ctx context.Context, configs []parsers.ProxyConfig, stSettings
 			RoundStartedCallback: func(round, outboundsLen int) {
 				println(fmt.Sprintf("round %d/%d", round+1, stSettings.Rounds))
 			},
-			ProgressCallback: func(result testers.SpeedTestResult) {
+			ProgressCallback: func(result measure.SpeedTestResult) {
 				var t string
-				if stSettings.Mode == testers.Download {
+				if stSettings.Mode == measure.Download {
 					t = "download"
 				} else {
 					t = "upload"
@@ -54,10 +54,10 @@ func runSpeedTest(ctx context.Context, configs []parsers.ProxyConfig, stSettings
 		},
 		TargetBytes: stSettings.TargetBytes,
 		Mode:        stSettings.Mode,
-		Provider:    testers.CloudflareProvider,
+		Provider:    measure.CloudflareProvider,
 	}
 
-	results, err := runner.RunSpeedTests(ctx, configs, config)
+	results, err := testRunner.RunSpeedTests(ctx, configs, config)
 	if err != nil {
 		return nil, nil, fmt.Errorf("speed test failed: %w", err)
 	}

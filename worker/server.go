@@ -1,4 +1,4 @@
-package testerframework
+package worker
 
 import (
 	"bufio"
@@ -14,32 +14,31 @@ import (
 	"syscall"
 
 	"github.com/bluegradienthorizon/proxytoolbox/core"
-	"github.com/bluegradienthorizon/proxytoolbox/pkg/ipcprotocol"
 )
 
-// CoreTester is the ONLY interface a new core has to implement.
-type CoreTester interface {
-	Info() ipcprotocol.CoreInfo
-	Validate(ctx context.Context, configs []*core.OutboundConfig, sendResult func(ipcprotocol.Response)) error
-	TestLatency(ctx context.Context, settings ipcprotocol.LatencySettings, tags []string, sendResult func(ipcprotocol.Response)) error
-	TestSpeed(ctx context.Context, settings ipcprotocol.SpeedSettings, tags []string, sendResult func(ipcprotocol.Response)) error
+// Worker is the ONLY interface a new worker has to implement.
+type Worker interface {
+	Info() CoreInfo
+	Validate(ctx context.Context, configs []*core.OutboundConfig, sendResult func(Response)) error
+	TestLatency(ctx context.Context, settings LatencySettings, tags []string, sendResult func(Response)) error
+	TestSpeed(ctx context.Context, settings SpeedSettings, tags []string, sendResult func(Response)) error
 }
 
 // Run parses --info / --run and blocks forever serving TCP requests.
-func Run(tester CoreTester) {
+func Run(worker Worker) {
 	var infoFlag, runFlag bool
 	flag.BoolVar(&infoFlag, "info", false, "Print core info as JSON and exit")
-	flag.BoolVar(&runFlag, "run", false, "Run tester server")
+	flag.BoolVar(&runFlag, "run", false, "Run worker server")
 	flag.Parse()
 
 	if infoFlag {
-		b, _ := json.Marshal(tester.Info())
+		b, _ := json.Marshal(worker.Info())
 		fmt.Println(string(b))
 		os.Exit(0)
 	}
 
 	if !runFlag {
-		fmt.Fprintln(os.Stderr, "Usage: tester --info | --run")
+		fmt.Fprintln(os.Stderr, "Usage: worker --info | --run")
 		os.Exit(1)
 	}
 
@@ -61,10 +60,10 @@ func Run(tester CoreTester) {
 	}
 	defer conn.Close()
 
-	handle(conn, tester)
+	handle(conn, worker)
 }
 
-func handle(conn net.Conn, tester CoreTester) {
+func handle(conn net.Conn, worker Worker) {
 	bw := bufio.NewWriter(conn)
 	dec := json.NewDecoder(conn)
 	sw := &sessionWriter{bw: bw}
@@ -83,23 +82,23 @@ func handle(conn net.Conn, tester CoreTester) {
 	}()
 
 	for {
-		var req ipcprotocol.Request
+		var req Request
 		if err := dec.Decode(&req); err != nil {
 			if err == io.EOF {
 				return
 			}
-			sw.Write(ipcprotocol.Response{Type: ipcprotocol.ResponseTypeError, Error: err.Error()})
+			sw.Write(Response{Type: ResponseTypeError, Error: err.Error()})
 			return
 		}
 
 		// Handle each request in its own goroutine so that the main read loop
 		// can immediately detect connection loss (parent termination) via EOF
 		// even while a long-running test is in progress.
-		go func(req ipcprotocol.Request) {
+		go func(req Request) {
 			if !sw.TryLock() {
 				sw.Lock()
-				sw.Write(ipcprotocol.Response{Type: ipcprotocol.ResponseTypeBusy})
-				sw.Write(ipcprotocol.Response{Type: ipcprotocol.ResponseTypeDone})
+				sw.Write(Response{Type: ResponseTypeBusy})
+				sw.Write(Response{Type: ResponseTypeDone})
 				sw.Unlock()
 				return
 			}
@@ -107,19 +106,19 @@ func handle(conn net.Conn, tester CoreTester) {
 
 			var err error
 			switch req.Type {
-			case ipcprotocol.RequestTypeValidate:
-				err = tester.Validate(ctx, toCoreConfigs(req.Configs), sw.Write)
-			case ipcprotocol.RequestTypeTest:
+			case RequestTypeValidate:
+				err = worker.Validate(ctx, toCoreConfigs(req.Configs), sw.Write)
+			case RequestTypeTest:
 				switch req.TestType {
-				case ipcprotocol.LatencyTest:
-					var s ipcprotocol.LatencySettings
+				case LatencyTest:
+					var s LatencySettings
 					if err = json.Unmarshal(req.Settings, &s); err == nil {
-						err = tester.TestLatency(ctx, s, req.Tags, sw.Write)
+						err = worker.TestLatency(ctx, s, req.Tags, sw.Write)
 					}
-				case ipcprotocol.SpeedTest:
-					var s ipcprotocol.SpeedSettings
+				case SpeedTest:
+					var s SpeedSettings
 					if err = json.Unmarshal(req.Settings, &s); err == nil {
-						err = tester.TestSpeed(ctx, s, req.Tags, sw.Write)
+						err = worker.TestSpeed(ctx, s, req.Tags, sw.Write)
 					}
 				default:
 					err = fmt.Errorf("unknown test type: %s", req.TestType)
@@ -129,9 +128,9 @@ func handle(conn net.Conn, tester CoreTester) {
 			}
 
 			if err != nil {
-				sw.Write(ipcprotocol.Response{Type: ipcprotocol.ResponseTypeError, Error: err.Error()})
+				sw.Write(Response{Type: ResponseTypeError, Error: err.Error()})
 			}
-			sw.Write(ipcprotocol.Response{Type: ipcprotocol.ResponseTypeDone})
+			sw.Write(Response{Type: ResponseTypeDone})
 		}(req)
 	}
 }
@@ -142,7 +141,7 @@ type sessionWriter struct {
 	bw        *bufio.Writer
 }
 
-func (sw *sessionWriter) Write(r ipcprotocol.Response) {
+func (sw *sessionWriter) Write(r Response) {
 	sw.lineMu.Lock()
 	defer sw.lineMu.Unlock()
 	b, _ := json.Marshal(r)
@@ -162,7 +161,7 @@ func (sw *sessionWriter) Unlock() {
 	sw.sessionMu.Unlock()
 }
 
-func toCoreConfigs(raw []*ipcprotocol.RawConfig) []*core.OutboundConfig {
+func toCoreConfigs(raw []*RawConfig) []*core.OutboundConfig {
 	out := make([]*core.OutboundConfig, 0, len(raw))
 	for _, rc := range raw {
 		cfg, err := rc.ToCore()

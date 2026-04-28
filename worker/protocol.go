@@ -1,4 +1,4 @@
-package ipcprotocol
+package worker
 
 import (
 	"encoding/json"
@@ -43,7 +43,7 @@ type Request struct {
 }
 
 // RawConfig mirrors core.OutboundConfig but keeps Settings as RawMessage
-// so the tester can unmarshal it into the correct concrete type.
+// so the worker can unmarshal it into the correct concrete type.
 type RawConfig struct {
 	Tag       string                `json:"tag"`
 	Type      string                `json:"type"`

@@ -1,4 +1,4 @@
-package testers
+package measure
 
 import (
 	"context"

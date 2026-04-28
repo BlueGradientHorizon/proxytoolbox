@@ -5,13 +5,11 @@ This is a Go library project called `proxytoolbox`. It's main purpose is to mass
 # Project structure
 
 The `internal/cli` is a developer utility used for testing the library's functionality during development. It is not part of the library's public API.
-The `internal/testers/singbox` is an example implementation of tester program. It is also not a part of library.
+The `internal/workers/singbox` is an example implementation of worker program. It is also not a part of library.
 
 The actual library code is organized in the following packages:
-- `parsers/` - Protocol parsers (Hysteria2, Shadowsocks, Trojan, VLESS, VMess)
-- `testers/` - Testing utilities (latency, speed)
 
-TODO: this list needs to be expanded to describe more directories
+TODO: describe directories
 
 When working on this project, focus on the library code first and edit `internal/cli` last.
 

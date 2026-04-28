@@ -1,4 +1,4 @@
-package testrunner
+package runner
 
 import (
 	"bufio"
@@ -14,14 +14,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bluegradienthorizon/proxytoolbox/pkg/ipcprotocol"
+	"github.com/bluegradienthorizon/proxytoolbox/worker"
 )
 
-// ErrTesterBusy is returned when the tester process is already handling a request.
-var ErrTesterBusy = errors.New("tester is busy")
+// ErrWorkerBusy is returned when the worker process is already handling a request.
+var ErrWorkerBusy = errors.New("worker is busy")
 
-// TesterProcess wraps a single tester binary invocation.
-type TesterProcess struct {
+// WorkerProcess wraps a single worker binary invocation.
+type WorkerProcess struct {
 	path  string
 	debug bool
 	cmd   *exec.Cmd
@@ -30,8 +30,8 @@ type TesterProcess struct {
 	bw    *bufio.Writer
 }
 
-// Start executes the tester with --run, reads the TCP port from stdout, and connects.
-func (tp *TesterProcess) Start() error {
+// Start executes the worker with --run, reads the TCP port from stdout, and connects.
+func (tp *WorkerProcess) Start() error {
 	tp.cmd = exec.Command(tp.path, "--run")
 	stdout, err := tp.cmd.StdoutPipe()
 	if err != nil {
@@ -51,13 +51,13 @@ func (tp *TesterProcess) Start() error {
 	line, err := rd.ReadString('\n')
 	if err != nil {
 		tp.kill()
-		return fmt.Errorf("tester exited before ready: %w", err)
+		return fmt.Errorf("worker exited before ready: %w", err)
 	}
 	line = strings.TrimSpace(line)
 	const prefix = "PORT "
 	if !strings.HasPrefix(line, prefix) {
 		tp.kill()
-		return fmt.Errorf("unexpected tester output: %s", line)
+		return fmt.Errorf("unexpected worker output: %s", line)
 	}
 	port, err := strconv.Atoi(strings.TrimPrefix(line, prefix))
 	if err != nil {
@@ -74,7 +74,7 @@ func (tp *TesterProcess) Start() error {
 	conn, err := d.Dial("tcp", fmt.Sprintf("127.0.0.1:%d", port))
 	if err != nil {
 		tp.kill()
-		return fmt.Errorf("cannot connect to tester: %w", err)
+		return fmt.Errorf("cannot connect to worker: %w", err)
 	}
 	tp.conn = conn
 	tp.dec = json.NewDecoder(conn)
@@ -83,7 +83,7 @@ func (tp *TesterProcess) Start() error {
 }
 
 // SendRequest sends the request and consumes all streamed responses until "done".
-func (tp *TesterProcess) SendRequest(ctx context.Context, req ipcprotocol.Request, onResponse func(ipcprotocol.Response)) error {
+func (tp *WorkerProcess) SendRequest(ctx context.Context, req worker.Request, onResponse func(worker.Response)) error {
 	b, _ := json.Marshal(req)
 	if _, err := fmt.Fprintf(tp.bw, "%s\n", b); err != nil {
 		return err
@@ -99,7 +99,7 @@ func (tp *TesterProcess) SendRequest(ctx context.Context, req ipcprotocol.Reques
 			return ctx.Err()
 		default:
 		}
-		var r ipcprotocol.Response
+		var r worker.Response
 		if err := tp.dec.Decode(&r); err != nil {
 			if ctx.Err() != nil {
 				return ctx.Err()
@@ -107,19 +107,19 @@ func (tp *TesterProcess) SendRequest(ctx context.Context, req ipcprotocol.Reques
 			return fmt.Errorf("decode error: %w", err)
 		}
 		switch r.Type {
-		case ipcprotocol.ResponseTypeDone:
+		case worker.ResponseTypeDone:
 			if testErr != nil {
 				return testErr
 			}
 			return nil
-		case ipcprotocol.ResponseTypeError:
+		case worker.ResponseTypeError:
 			// Do not return immediately; keep reading until "done"
 			// so the next round does not read leftover messages.
 			testErr = fmt.Errorf("tester error: %s", r.Error)
-		case ipcprotocol.ResponseTypeBusy:
+		case worker.ResponseTypeBusy:
 			// Do not return immediately; keep reading until "done"
 			// so the next round does not read leftover messages.
-			testErr = ErrTesterBusy
+			testErr = ErrWorkerBusy
 		default:
 			if onResponse != nil {
 				onResponse(r)
@@ -128,7 +128,7 @@ func (tp *TesterProcess) SendRequest(ctx context.Context, req ipcprotocol.Reques
 	}
 }
 
-func (tp *TesterProcess) Close() error {
+func (tp *WorkerProcess) Close() error {
 	if tp.conn != nil {
 		tp.conn.Close()
 		tp.conn = nil
@@ -137,7 +137,7 @@ func (tp *TesterProcess) Close() error {
 	return nil
 }
 
-func (tp *TesterProcess) kill() {
+func (tp *WorkerProcess) kill() {
 	if tp.cmd != nil && tp.cmd.Process != nil {
 		tp.cmd.Process.Kill()
 		tp.cmd.Wait()

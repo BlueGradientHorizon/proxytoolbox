@@ -3,7 +3,7 @@ package utils
 import (
 	"fmt"
 
-	"github.com/bluegradienthorizon/proxytoolbox/testers"
+	"github.com/bluegradienthorizon/proxytoolbox/measure"
 )
 
 type StatsPrinter struct {
@@ -11,10 +11,10 @@ type StatsPrinter struct {
 	completed int
 	succeeded int
 	failed    int
-	results   <-chan testers.LatencyTestResult
+	results   <-chan measure.LatencyTestResult
 }
 
-func NewStatsPrinter(total int, results <-chan testers.LatencyTestResult) *StatsPrinter {
+func NewStatsPrinter(total int, results <-chan measure.LatencyTestResult) *StatsPrinter {
 	return &StatsPrinter{
 		total:   total,
 		results: results,

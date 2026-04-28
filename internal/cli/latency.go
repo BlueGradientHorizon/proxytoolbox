@@ -6,10 +6,10 @@ import (
 	"time"
 
 	"github.com/bluegradienthorizon/proxytoolbox/internal/cli/utils"
+	"github.com/bluegradienthorizon/proxytoolbox/measure"
 	"github.com/bluegradienthorizon/proxytoolbox/parsers"
-	"github.com/bluegradienthorizon/proxytoolbox/pkg/ipcprotocol"
-	"github.com/bluegradienthorizon/proxytoolbox/testers"
-	"github.com/bluegradienthorizon/proxytoolbox/testrunner"
+	"github.com/bluegradienthorizon/proxytoolbox/runner"
+	"github.com/bluegradienthorizon/proxytoolbox/worker"
 )
 
 type LatencyTestSettings struct {
@@ -18,19 +18,19 @@ type LatencyTestSettings struct {
 	Rounds      int
 }
 
-func runLatencyTest(ctx context.Context, configs []parsers.ProxyConfig, ltSettings LatencyTestSettings, runner *testrunner.TestRunner) ([]testers.LatencyTestResult, []parsers.ProxyConfig, error) {
-	var printerChan chan testers.LatencyTestResult
+func runLatencyTest(ctx context.Context, configs []parsers.ProxyConfig, ltSettings LatencyTestSettings, testRunner *runner.TestRunner) ([]measure.LatencyTestResult, []parsers.ProxyConfig, error) {
+	var printerChan chan measure.LatencyTestResult
 	var printer *utils.StatsPrinter
 	var printDone chan bool
 
-	config := testrunner.LatencyTestRunnerSettings{
-		BaseTestRunnerSettings: testrunner.BaseTestRunnerSettings{
+	config := runner.LatencyTestRunnerSettings{
+		BaseTestRunnerSettings: runner.BaseTestRunnerSettings{
 			SortResults:  true,
 			FilterFailed: true,
 			Concurrency:  ltSettings.Concurrency,
 			Timeout:      ltSettings.Timeout,
 			Rounds:       ltSettings.Rounds,
-			CoreCreatedCallback: func(validationErrors []ipcprotocol.ValidationError) {
+			CoreCreatedCallback: func(validationErrors []worker.ValidationError) {
 				println("validation errors:")
 				for _, errPair := range validationErrors {
 					fmt.Printf("[%s] %s\n", errPair.Tag, errPair.Error)
@@ -38,12 +38,12 @@ func runLatencyTest(ctx context.Context, configs []parsers.ProxyConfig, ltSettin
 			},
 			RoundStartedCallback: func(round int, outboundsLen int) {
 				println(fmt.Sprintf("round %d/%d", round+1, ltSettings.Rounds))
-				printerChan = make(chan testers.LatencyTestResult, outboundsLen)
+				printerChan = make(chan measure.LatencyTestResult, outboundsLen)
 				printer = utils.NewStatsPrinter(outboundsLen, printerChan)
 				printDone = make(chan bool)
 				go printer.Start(printDone)
 			},
-			ProgressCallback: func(result testers.LatencyTestResult) {
+			ProgressCallback: func(result measure.LatencyTestResult) {
 				printerChan <- result
 			},
 			RoundEndedCallback: func(round int) {
@@ -51,10 +51,10 @@ func runLatencyTest(ctx context.Context, configs []parsers.ProxyConfig, ltSettin
 				close(printerChan)
 			},
 		},
-		TestURL: testers.Google204,
+		TestURL: measure.Google204,
 	}
 
-	testResults, err := runner.RunLatencyTests(ctx, configs, config)
+	testResults, err := testRunner.RunLatencyTests(ctx, configs, config)
 	if err != nil {
 		return nil, nil, fmt.Errorf("latency tests failed: %w", err)
 	}

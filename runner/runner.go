@@ -1,4 +1,4 @@
-package testrunner
+package runner
 
 import (
 	"context"
@@ -7,38 +7,38 @@ import (
 	"sync"
 
 	"github.com/bluegradienthorizon/proxytoolbox/core"
+	"github.com/bluegradienthorizon/proxytoolbox/measure"
 	"github.com/bluegradienthorizon/proxytoolbox/parsers"
-	"github.com/bluegradienthorizon/proxytoolbox/pkg/ipcprotocol"
-	"github.com/bluegradienthorizon/proxytoolbox/testers"
+	"github.com/bluegradienthorizon/proxytoolbox/worker"
 )
 
-// TestRunner manages tester process lifecycle and test execution via IPC.
+// TestRunner manages worker process lifecycle and test execution via IPC.
 type TestRunner struct {
-	testerPath  string
-	testerDebug bool
-	proc        *TesterProcess
+	workerPath  string
+	workerDebug bool
+	proc        *WorkerProcess
 	mu          sync.Mutex
 	testMu      sync.Mutex
 }
 
 // NewTestRunner creates a new test runner with the specified configuration.
-func NewTestRunner(testerSettings TesterSettings) (*TestRunner, error) {
-	if testerSettings.TesterPath == "" {
-		return nil, fmt.Errorf("tester path is required")
+func NewTestRunner(runnerSettings RunnerSettings) (*TestRunner, error) {
+	if runnerSettings.WorkerPath == "" {
+		return nil, fmt.Errorf("worker path is required")
 	}
-	return &TestRunner{testerPath: testerSettings.TesterPath, testerDebug: testerSettings.TesterDebug}, nil
+	return &TestRunner{workerPath: runnerSettings.WorkerPath, workerDebug: runnerSettings.WorkerDebug}, nil
 }
 
-func (tr *TestRunner) ensureProc() (*TesterProcess, error) {
+func (tr *TestRunner) ensureProc() (*WorkerProcess, error) {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 	if tr.proc != nil {
 		return tr.proc, nil
 	}
-	tr.proc = &TesterProcess{path: tr.testerPath, debug: tr.testerDebug}
+	tr.proc = &WorkerProcess{path: tr.workerPath, debug: tr.workerDebug}
 	if err := tr.proc.Start(); err != nil {
 		tr.proc = nil
-		return nil, fmt.Errorf("start tester: %w", err)
+		return nil, fmt.Errorf("start worker: %w", err)
 	}
 	return tr.proc, nil
 }
@@ -61,44 +61,44 @@ func (tr *TestRunner) Close() error {
 // RunLatencyTests executes latency tests with automatic lifecycle management.
 func (tr *TestRunner) RunLatencyTests(ctx context.Context, configs []parsers.ProxyConfig, ltRunnerSettings LatencyTestRunnerSettings) (*LatencyTestResults, error) {
 	base := ltRunnerSettings.getBaseSettings()
-	var progressCb func(testers.LatencyTestResult)
+	var progressCb func(measure.LatencyTestResult)
 	if base.ProgressCallback != nil {
-		progressCb, _ = base.ProgressCallback.(func(testers.LatencyTestResult))
+		progressCb, _ = base.ProgressCallback.(func(measure.LatencyTestResult))
 	}
 
 	res, err := runIPCTests(
 		tr, ctx, configs, &ltRunnerSettings,
-		func(currentConfigs []parsers.ProxyConfig, c *LatencyTestRunnerSettings) ipcprotocol.Request {
+		func(currentConfigs []parsers.ProxyConfig, c *LatencyTestRunnerSettings) worker.Request {
 			testURL := c.TestURL
 			if testURL == "" {
-				testURL = testers.Google204
+				testURL = measure.Google204
 			}
 			tags := make([]string, len(currentConfigs))
 			for i, p := range currentConfigs {
 				tags[i] = p.Config.Tag
 			}
-			return ipcprotocol.Request{
-				Type:     ipcprotocol.RequestTypeTest,
-				TestType: ipcprotocol.LatencyTest,
+			return worker.Request{
+				Type:     worker.RequestTypeTest,
+				TestType: worker.LatencyTest,
 				Tags:     tags,
-				Settings: mustMarshal(ipcprotocol.LatencySettings{
+				Settings: mustMarshal(worker.LatencySettings{
 					TimeoutMs:   int(c.Timeout.Milliseconds()),
 					TestURL:     testURL,
 					Concurrency: base.Concurrency,
 				}),
 			}
 		},
-		func(r ipcprotocol.Response) testers.LatencyTestResult {
+		func(r worker.Response) measure.LatencyTestResult {
 			var err error
 			if r.Error != "" {
 				err = fmt.Errorf("%s", r.Error)
 			}
-			return testers.LatencyTestResult{Tag: r.Tag, Delay: r.LatencyMs, Error: err}
+			return measure.LatencyTestResult{Tag: r.Tag, Delay: r.LatencyMs, Error: err}
 		},
 		progressCb,
-		func(r testers.LatencyTestResult) bool { return r.Error == nil && r.Delay > 0 },
-		func(r testers.LatencyTestResult) string { return r.Tag },
-		func(rs []testers.LatencyTestResult, ve []ipcprotocol.ValidationError, sort bool) any {
+		func(r measure.LatencyTestResult) bool { return r.Error == nil && r.Delay > 0 },
+		func(r measure.LatencyTestResult) string { return r.Tag },
+		func(rs []measure.LatencyTestResult, ve []worker.ValidationError, sort bool) any {
 			return aggregateLatencyResults(rs, ve, sort)
 		},
 	)
@@ -111,28 +111,28 @@ func (tr *TestRunner) RunLatencyTests(ctx context.Context, configs []parsers.Pro
 // RunSpeedTests executes speed tests with automatic lifecycle management.
 func (tr *TestRunner) RunSpeedTests(ctx context.Context, configs []parsers.ProxyConfig, stRunnerSettings SpeedTestRunnerSettings) (*SpeedTestResults, error) {
 	base := stRunnerSettings.getBaseSettings()
-	var progressCb func(testers.SpeedTestResult)
+	var progressCb func(measure.SpeedTestResult)
 	if base.ProgressCallback != nil {
-		progressCb, _ = base.ProgressCallback.(func(testers.SpeedTestResult))
+		progressCb, _ = base.ProgressCallback.(func(measure.SpeedTestResult))
 	}
 
 	mode := "download"
-	if stRunnerSettings.Mode == testers.Upload {
+	if stRunnerSettings.Mode == measure.Upload {
 		mode = "upload"
 	}
 
 	res, err := runIPCTests(
 		tr, ctx, configs, &stRunnerSettings,
-		func(currentConfigs []parsers.ProxyConfig, c *SpeedTestRunnerSettings) ipcprotocol.Request {
+		func(currentConfigs []parsers.ProxyConfig, c *SpeedTestRunnerSettings) worker.Request {
 			tags := make([]string, len(currentConfigs))
 			for i, p := range currentConfigs {
 				tags[i] = p.Config.Tag
 			}
-			return ipcprotocol.Request{
-				Type:     ipcprotocol.RequestTypeTest,
-				TestType: ipcprotocol.SpeedTest,
+			return worker.Request{
+				Type:     worker.RequestTypeTest,
+				TestType: worker.SpeedTest,
 				Tags:     tags,
-				Settings: mustMarshal(ipcprotocol.SpeedSettings{
+				Settings: mustMarshal(worker.SpeedSettings{
 					Mode:        mode,
 					TimeoutMs:   int(c.Timeout.Milliseconds()),
 					TargetBytes: c.TargetBytes,
@@ -140,17 +140,17 @@ func (tr *TestRunner) RunSpeedTests(ctx context.Context, configs []parsers.Proxy
 				}),
 			}
 		},
-		func(r ipcprotocol.Response) testers.SpeedTestResult {
+		func(r worker.Response) measure.SpeedTestResult {
 			var err error
 			if r.Error != "" {
 				err = fmt.Errorf("%s", r.Error)
 			}
-			return testers.SpeedTestResult{Tag: r.Tag, Speed: r.Speed, Error: err}
+			return measure.SpeedTestResult{Tag: r.Tag, Speed: r.Speed, Error: err}
 		},
 		progressCb,
-		func(r testers.SpeedTestResult) bool { return r.Error == nil && r.Speed > 0 },
-		func(r testers.SpeedTestResult) string { return r.Tag },
-		func(rs []testers.SpeedTestResult, ve []ipcprotocol.ValidationError, sort bool) any {
+		func(r measure.SpeedTestResult) bool { return r.Error == nil && r.Speed > 0 },
+		func(r measure.SpeedTestResult) string { return r.Tag },
+		func(rs []measure.SpeedTestResult, ve []worker.ValidationError, sort bool) any {
 			return aggregateSpeedResults(rs, ve, sort)
 		},
 	)
@@ -169,12 +169,12 @@ func runIPCTests[TResult any, TSettings testSettings](
 	ctx context.Context,
 	configs []parsers.ProxyConfig,
 	settings TSettings,
-	buildTestReq func([]parsers.ProxyConfig, TSettings) ipcprotocol.Request,
-	convert func(ipcprotocol.Response) TResult,
+	buildTestReq func([]parsers.ProxyConfig, TSettings) worker.Request,
+	convert func(worker.Response) TResult,
 	onProgress func(TResult),
 	isSuccess func(TResult) bool,
 	getTag func(TResult) string,
-	aggregate func([]TResult, []ipcprotocol.ValidationError, bool) any,
+	aggregate func([]TResult, []worker.ValidationError, bool) any,
 ) (any, error) {
 	base := settings.getBaseSettings()
 
@@ -191,15 +191,15 @@ func runIPCTests[TResult any, TSettings testSettings](
 	}
 
 	// --- Validation phase ---
-	var validationErrors []ipcprotocol.ValidationError
+	var validationErrors []worker.ValidationError
 
-	validateReq := ipcprotocol.Request{
-		Type:    ipcprotocol.RequestTypeValidate,
+	validateReq := worker.Request{
+		Type:    worker.RequestTypeValidate,
 		Configs: toRawConfigs(extractConfigs(configs)),
 	}
 
-	err = proc.SendRequest(ctx, validateReq, func(r ipcprotocol.Response) {
-		if r.Type == ipcprotocol.ResponseTypeValidation {
+	err = proc.SendRequest(ctx, validateReq, func(r worker.Response) {
+		if r.Type == worker.ResponseTypeValidation {
 			validationErrors = r.ValidationErrors
 			if base.CoreCreatedCallback != nil {
 				base.CoreCreatedCallback(validationErrors)
@@ -207,7 +207,7 @@ func runIPCTests[TResult any, TSettings testSettings](
 		}
 	})
 	if err != nil {
-		if err != ErrTesterBusy {
+		if err != ErrWorkerBusy {
 			tr.invalidateProc()
 		}
 		return nil, fmt.Errorf("validation: %w", err)
@@ -232,9 +232,9 @@ func runIPCTests[TResult any, TSettings testSettings](
 		req := buildTestReq(currentConfigs, settings)
 		var roundResults []TResult
 
-		err = proc.SendRequest(ctx, req, func(r ipcprotocol.Response) {
+		err = proc.SendRequest(ctx, req, func(r worker.Response) {
 			switch r.Type {
-			case ipcprotocol.ResponseTypeResult:
+			case worker.ResponseTypeResult:
 				res := convert(r)
 				roundResults = append(roundResults, res)
 				if onProgress != nil {
@@ -244,7 +244,7 @@ func runIPCTests[TResult any, TSettings testSettings](
 		})
 
 		if err != nil {
-			if err != ErrTesterBusy {
+			if err != ErrWorkerBusy {
 				tr.invalidateProc()
 			}
 			return nil, fmt.Errorf("round %d: %w", round+1, err)
@@ -293,11 +293,11 @@ func extractConfigs(configs []parsers.ProxyConfig) []*core.OutboundConfig {
 	return out
 }
 
-func toRawConfigs(configs []*core.OutboundConfig) []*ipcprotocol.RawConfig {
-	out := make([]*ipcprotocol.RawConfig, 0, len(configs))
+func toRawConfigs(configs []*core.OutboundConfig) []*worker.RawConfig {
+	out := make([]*worker.RawConfig, 0, len(configs))
 	for _, c := range configs {
 		s, _ := json.Marshal(c.Settings)
-		out = append(out, &ipcprotocol.RawConfig{
+		out = append(out, &worker.RawConfig{
 			Tag: c.Tag, Type: c.Type, Server: c.Server, Port: c.Port,
 			Settings: s, TLS: c.TLS, Transport: c.Transport,
 		})
@@ -343,7 +343,7 @@ func sortTestResults[T any](results []T, isSuccess func(T) bool, shouldSwap func
 	}
 }
 
-func aggregateLatencyResults(results []testers.LatencyTestResult, validationErrors []ipcprotocol.ValidationError, sortResults bool) *LatencyTestResults {
+func aggregateLatencyResults(results []measure.LatencyTestResult, validationErrors []worker.ValidationError, sortResults bool) *LatencyTestResults {
 	successCount := 0
 	failureCount := 0
 	for _, r := range results {
@@ -355,8 +355,8 @@ func aggregateLatencyResults(results []testers.LatencyTestResult, validationErro
 	}
 	if sortResults {
 		sortTestResults(results,
-			func(r testers.LatencyTestResult) bool { return r.Delay > 0 },
-			func(r1, r2 testers.LatencyTestResult) bool { return r1.Delay > r2.Delay })
+			func(r measure.LatencyTestResult) bool { return r.Delay > 0 },
+			func(r1, r2 measure.LatencyTestResult) bool { return r1.Delay > r2.Delay })
 	}
 	return &LatencyTestResults{
 		BaseTestResults: BaseTestResults{
@@ -367,7 +367,7 @@ func aggregateLatencyResults(results []testers.LatencyTestResult, validationErro
 	}
 }
 
-func aggregateSpeedResults(results []testers.SpeedTestResult, validationErrors []ipcprotocol.ValidationError, sortResults bool) *SpeedTestResults {
+func aggregateSpeedResults(results []measure.SpeedTestResult, validationErrors []worker.ValidationError, sortResults bool) *SpeedTestResults {
 	successCount := 0
 	failureCount := 0
 	for _, r := range results {
@@ -379,8 +379,8 @@ func aggregateSpeedResults(results []testers.SpeedTestResult, validationErrors [
 	}
 	if sortResults {
 		sortTestResults(results,
-			func(r testers.SpeedTestResult) bool { return r.Speed > 0 },
-			func(r1, r2 testers.SpeedTestResult) bool { return r1.Speed < r2.Speed })
+			func(r measure.SpeedTestResult) bool { return r.Speed > 0 },
+			func(r1, r2 measure.SpeedTestResult) bool { return r1.Speed < r2.Speed })
 	}
 	return &SpeedTestResults{
 		BaseTestResults: BaseTestResults{

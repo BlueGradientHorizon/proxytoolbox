@@ -1,17 +1,17 @@
-.PHONY: build cli tester-singbox clean
+.PHONY: build cli worker-singbox clean
 
 EXT :=
 ifeq ($(OS),Windows_NT)
 EXT := .exe
 endif
 
-build: cli tester-singbox
+build: cli worker-singbox
 
 cli:
 	cd internal/cli && make
 
-tester-singbox:
-	cd internal/testers/singbox && make
+worker-singbox:
+	cd internal/workers/singbox && make
 
 run: build
 	./bin/cli$(EXT)

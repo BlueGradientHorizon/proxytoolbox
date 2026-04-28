@@ -8,10 +8,9 @@ import (
 	"time"
 
 	"github.com/bluegradienthorizon/proxytoolbox/core"
-	"github.com/bluegradienthorizon/proxytoolbox/internal/testers/utils"
-	"github.com/bluegradienthorizon/proxytoolbox/pkg/ipcprotocol"
-	"github.com/bluegradienthorizon/proxytoolbox/pkg/testerframework"
-	"github.com/bluegradienthorizon/proxytoolbox/testers"
+	"github.com/bluegradienthorizon/proxytoolbox/internal/workers/utils"
+	"github.com/bluegradienthorizon/proxytoolbox/worker"
+	"github.com/bluegradienthorizon/proxytoolbox/measure"
 
 	box "github.com/sagernet/sing-box"
 	"github.com/sagernet/sing-box/include"
@@ -19,23 +18,23 @@ import (
 	"github.com/sagernet/sing/common/metadata"
 )
 
-type sbTester struct {
+type sbWorker struct {
 	mu          sync.Mutex
 	configs     []*core.OutboundConfig
 	configMap   map[string]*core.OutboundConfig
 	outboundMap map[string]option.Outbound
 }
 
-func (t *sbTester) Info() ipcprotocol.CoreInfo {
-	return ipcprotocol.CoreInfo{
+func (t *sbWorker) Info() worker.CoreInfo {
+	return worker.CoreInfo{
 		Name:    "sing-box",
 		Version: utils.GetModuleVersion("github.com/sagernet/sing-box"),
 	}
 }
 
-func (t *sbTester) Validate(ctx context.Context, configs []*core.OutboundConfig, sendResult func(ipcprotocol.Response)) error {
+func (t *sbWorker) Validate(ctx context.Context, configs []*core.OutboundConfig, sendResult func(worker.Response)) error {
 	adapter := NewAdapter()
-	var validationErrors []ipcprotocol.ValidationError
+	var validationErrors []worker.ValidationError
 	var validOutbounds []option.Outbound
 	var validConfigs []*core.OutboundConfig
 	outboundMap := make(map[string]option.Outbound)
@@ -43,7 +42,7 @@ func (t *sbTester) Validate(ctx context.Context, configs []*core.OutboundConfig,
 	for _, cfg := range configs {
 		sbOut, err := adapter.ConvertOutbound(cfg)
 		if err != nil {
-			validationErrors = append(validationErrors, ipcprotocol.ValidationError{
+			validationErrors = append(validationErrors, worker.ValidationError{
 				Tag:   cfg.Tag,
 				Error: "convert: " + cfg.Type + ": " + err.Error(),
 			})
@@ -52,7 +51,7 @@ func (t *sbTester) Validate(ctx context.Context, configs []*core.OutboundConfig,
 		// TODO: check if it's possible to validate by batches AND be able to get a failed list
 		tmp, err := newBoxInstance(ctx, []option.Outbound{*sbOut})
 		if err != nil {
-			validationErrors = append(validationErrors, ipcprotocol.ValidationError{
+			validationErrors = append(validationErrors, worker.ValidationError{
 				Tag:   cfg.Tag,
 				Error: "instantiate: " + cfg.Type + ": " + err.Error(),
 			})
@@ -71,14 +70,14 @@ func (t *sbTester) Validate(ctx context.Context, configs []*core.OutboundConfig,
 	}
 
 	if err != nil {
-		validationErrors = append(validationErrors, ipcprotocol.ValidationError{
+		validationErrors = append(validationErrors, worker.ValidationError{
 			Tag:   "",
 			Error: err.Error(),
 		})
 	}
 
-	sendResult(ipcprotocol.Response{
-		Type:             ipcprotocol.ResponseTypeValidation,
+	sendResult(worker.Response{
+		Type:             worker.ResponseTypeValidation,
 		ValidationErrors: validationErrors,
 	})
 
@@ -95,7 +94,7 @@ func (t *sbTester) Validate(ctx context.Context, configs []*core.OutboundConfig,
 	return nil
 }
 
-func (t *sbTester) selectOutbounds(tags []string) ([]*core.OutboundConfig, []option.Outbound) {
+func (t *sbWorker) selectOutbounds(tags []string) ([]*core.OutboundConfig, []option.Outbound) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
@@ -120,7 +119,7 @@ func (t *sbTester) selectOutbounds(tags []string) ([]*core.OutboundConfig, []opt
 	return out, outbounds
 }
 
-func (t *sbTester) TestLatency(ctx context.Context, settings ipcprotocol.LatencySettings, tags []string, sendResult func(ipcprotocol.Response)) error {
+func (t *sbWorker) TestLatency(ctx context.Context, settings worker.LatencySettings, tags []string, sendResult func(worker.Response)) error {
 	configs, outbounds := t.selectOutbounds(tags)
 
 	// Report validation-failed for requested tags that are not present in the stored set
@@ -130,7 +129,7 @@ func (t *sbTester) TestLatency(ctx context.Context, settings ipcprotocol.Latency
 	}
 	for _, tag := range tags {
 		if _, ok := foundTags[tag]; !ok {
-			sendResult(ipcprotocol.Response{Type: ipcprotocol.ResponseTypeResult, Tag: tag, Error: "validation failed"})
+			sendResult(worker.Response{Type: worker.ResponseTypeResult, Tag: tag, Error: "validation failed"})
 		}
 	}
 
@@ -141,7 +140,7 @@ func (t *sbTester) TestLatency(ctx context.Context, settings ipcprotocol.Latency
 	instance, err := newBoxInstance(ctx, outbounds)
 	if err != nil {
 		for _, cfg := range configs {
-			sendResult(ipcprotocol.Response{Type: ipcprotocol.ResponseTypeResult, Tag: cfg.Tag, Error: err.Error()})
+			sendResult(worker.Response{Type: worker.ResponseTypeResult, Tag: cfg.Tag, Error: err.Error()})
 		}
 		return nil
 	}
@@ -152,12 +151,12 @@ func (t *sbTester) TestLatency(ctx context.Context, settings ipcprotocol.Latency
 	}
 
 	sbOuts := instance.Outbound().Outbounds()
-	proxies := make([]testers.ProxyInfo, 0, len(sbOuts))
-	dialers := make([]testers.DialerFunc, 0, len(sbOuts))
+	proxies := make([]measure.ProxyInfo, 0, len(sbOuts))
+	dialers := make([]measure.DialerFunc, 0, len(sbOuts))
 
 	for _, sbOut := range sbOuts {
 		tag := sbOut.Tag()
-		proxies = append(proxies, testers.ProxyInfo{Tag: tag, Type: sbOut.Type()})
+		proxies = append(proxies, measure.ProxyInfo{Tag: tag, Type: sbOut.Type()})
 		o := sbOut
 		dialers = append(dialers, func(ctx context.Context, network, addr string) (net.Conn, error) {
 			return o.DialContext(ctx, network, metadata.ParseSocksaddr(addr))
@@ -165,7 +164,7 @@ func (t *sbTester) TestLatency(ctx context.Context, settings ipcprotocol.Latency
 	}
 
 	timeout := time.Duration(settings.TimeoutMs) * time.Millisecond
-	lt, err := testers.NewLatencyTest(ctx, testers.LatencyTestSettings{
+	lt, err := measure.NewLatencyTest(ctx, measure.LatencyTestSettings{
 		TestURL:     settings.TestURL,
 		Timeout:     timeout,
 		Concurrency: settings.Concurrency,
@@ -175,11 +174,11 @@ func (t *sbTester) TestLatency(ctx context.Context, settings ipcprotocol.Latency
 		return err
 	}
 
-	ch := make(chan testers.LatencyTestResult, len(proxies))
+	ch := make(chan measure.LatencyTestResult, len(proxies))
 	wait := lt.Run(ch)
 	for range proxies {
 		r := <-ch
-		resp := ipcprotocol.Response{Type: ipcprotocol.ResponseTypeResult, Tag: r.Tag, LatencyMs: r.Delay}
+		resp := worker.Response{Type: worker.ResponseTypeResult, Tag: r.Tag, LatencyMs: r.Delay}
 		if r.Error != nil {
 			resp.Error = r.Error.Error()
 		}
@@ -196,7 +195,7 @@ func (t *sbTester) TestLatency(ctx context.Context, settings ipcprotocol.Latency
 	return nil
 }
 
-func (t *sbTester) TestSpeed(ctx context.Context, settings ipcprotocol.SpeedSettings, tags []string, sendResult func(ipcprotocol.Response)) error {
+func (t *sbWorker) TestSpeed(ctx context.Context, settings worker.SpeedSettings, tags []string, sendResult func(worker.Response)) error {
 	configs, outbounds := t.selectOutbounds(tags)
 
 	// Report validation-failed for requested tags that are not present in the stored set
@@ -206,7 +205,7 @@ func (t *sbTester) TestSpeed(ctx context.Context, settings ipcprotocol.SpeedSett
 	}
 	for _, tag := range tags {
 		if _, ok := foundTags[tag]; !ok {
-			sendResult(ipcprotocol.Response{Type: ipcprotocol.ResponseTypeResult, Tag: tag, Error: "validation failed"})
+			sendResult(worker.Response{Type: worker.ResponseTypeResult, Tag: tag, Error: "validation failed"})
 		}
 	}
 
@@ -217,7 +216,7 @@ func (t *sbTester) TestSpeed(ctx context.Context, settings ipcprotocol.SpeedSett
 	instance, err := newBoxInstance(ctx, outbounds)
 	if err != nil {
 		for _, cfg := range configs {
-			sendResult(ipcprotocol.Response{Type: ipcprotocol.ResponseTypeResult, Tag: cfg.Tag, Error: err.Error()})
+			sendResult(worker.Response{Type: worker.ResponseTypeResult, Tag: cfg.Tag, Error: err.Error()})
 		}
 		return nil
 	}
@@ -228,42 +227,42 @@ func (t *sbTester) TestSpeed(ctx context.Context, settings ipcprotocol.SpeedSett
 	}
 
 	sbOuts := instance.Outbound().Outbounds()
-	proxies := make([]testers.ProxyInfo, 0, len(sbOuts))
-	dialers := make([]testers.DialerFunc, 0, len(sbOuts))
+	proxies := make([]measure.ProxyInfo, 0, len(sbOuts))
+	dialers := make([]measure.DialerFunc, 0, len(sbOuts))
 
 	for _, sbOut := range sbOuts {
 		tag := sbOut.Tag()
-		proxies = append(proxies, testers.ProxyInfo{Tag: tag, Type: sbOut.Type()})
+		proxies = append(proxies, measure.ProxyInfo{Tag: tag, Type: sbOut.Type()})
 		o := sbOut
 		dialers = append(dialers, func(ctx context.Context, network, addr string) (net.Conn, error) {
 			return o.DialContext(ctx, network, metadata.ParseSocksaddr(addr))
 		})
 	}
 
-	mode := testers.Download
+	mode := measure.Download
 	if settings.Mode == "upload" {
-		mode = testers.Upload
+		mode = measure.Upload
 	}
 	timeout := time.Duration(settings.TimeoutMs) * time.Millisecond
 
-	stSettings := testers.SpeedTestSettings{
+	stSettings := measure.SpeedTestSettings{
 		Mode:        mode,
-		Provider:    testers.CloudflareProvider,
+		Provider:    measure.CloudflareProvider,
 		Timeout:     timeout,
 		TargetBytes: settings.TargetBytes,
 		Concurrency: settings.Concurrency,
 	}
-	st, err := testers.NewSpeedTest(ctx, stSettings, proxies, dialers, CreateTLSConfigProvider())
+	st, err := measure.NewSpeedTest(ctx, stSettings, proxies, dialers, CreateTLSConfigProvider())
 	if err != nil {
 		instance.Close()
 		return err
 	}
 
-	ch := make(chan testers.SpeedTestResult, len(proxies))
+	ch := make(chan measure.SpeedTestResult, len(proxies))
 	wait := st.Run(ch)
 	for range proxies {
 		r := <-ch
-		resp := ipcprotocol.Response{Type: ipcprotocol.ResponseTypeResult, Tag: r.Tag, Speed: r.Speed}
+		resp := worker.Response{Type: worker.ResponseTypeResult, Tag: r.Tag, Speed: r.Speed}
 		if r.Error != nil {
 			resp.Error = r.Error.Error()
 		}
@@ -293,5 +292,5 @@ func newBoxInstance(ctx context.Context, outbounds []option.Outbound) (*box.Box,
 }
 
 func main() {
-	testerframework.Run(&sbTester{})
+	worker.Run(&sbWorker{})
 }

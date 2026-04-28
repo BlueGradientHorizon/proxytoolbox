@@ -1,19 +1,19 @@
-package testrunner
+package runner
 
 import (
 	"time"
 
-	"github.com/bluegradienthorizon/proxytoolbox/pkg/ipcprotocol"
-	"github.com/bluegradienthorizon/proxytoolbox/testers"
+	"github.com/bluegradienthorizon/proxytoolbox/measure"
+	"github.com/bluegradienthorizon/proxytoolbox/worker"
 )
 
-// TesterSettings configures test runner behavior and tester path.
-type TesterSettings struct {
-	// TesterPath is the absolute path to the tester binary.
-	TesterPath string
+// RunnerSettings configures test runner behavior and worker path.
+type RunnerSettings struct {
+	// WorkerPath is the absolute path to the worker binary.
+	WorkerPath string
 
-	// TesterDebug enables printing of tester stdout and stderr.
-	TesterDebug bool
+	// WorkerDebug enables printing of worker stdout and stderr.
+	WorkerDebug bool
 }
 
 // BaseTestRunnerSettings contains common configuration fields shared by all test types.
@@ -33,7 +33,7 @@ type BaseTestRunnerSettings struct {
 	// CoreCreatedCallback is called after core creation with validation errors
 	// It allows initialization of progress tracking with accurate totals
 	// Optional: can be nil if not needed
-	CoreCreatedCallback func(validationErrors []ipcprotocol.ValidationError)
+	CoreCreatedCallback func(validationErrors []worker.ValidationError)
 
 	// RoundStartedCallback is called at the start of each test round
 	// It receives the current round number (0-indexed)
@@ -63,7 +63,6 @@ type LatencyTestRunnerSettings struct {
 	BaseTestRunnerSettings
 
 	// TestURL specifies the URL to test latency against
-	// Common values: testers.Google204, testers.Cloudflare, custom URLs
 	TestURL string
 }
 
@@ -76,9 +75,41 @@ type SpeedTestRunnerSettings struct {
 	TargetBytes int64
 
 	// Mode specifies the speed test mode (Download or Upload)
-	Mode testers.SpeedTestMode
+	Mode measure.SpeedTestMode
 
 	// Provider specifies which speed test provider to use
-	// Common values: testers.CloudflareProvider, testers.CustomProvider
-	Provider testers.SpeedTestProvider
+	Provider measure.SpeedTestProvider
+}
+
+// BaseTestResults contains common fields shared by all test result types.
+type BaseTestResults struct {
+	// SuccessCount is the number of successful tests
+	SuccessCount int
+
+	// FailureCount is the number of failed tests
+	FailureCount int
+
+	// ValidationErrors is a list of tag-error pairs for failed configurations
+	// Collected during configuration validation before testing begins
+	ValidationErrors []worker.ValidationError
+}
+
+// LatencyTestResults contains aggregated results from latency testing.
+// It provides both individual test results and summary statistics.
+type LatencyTestResults struct {
+	BaseTestResults
+
+	// Results contains all test results from the final round
+	// Includes both successful and failed tests depending on configuration
+	Results []measure.LatencyTestResult
+}
+
+// SpeedTestResults contains aggregated results from speed testing.
+// It provides both individual test results and summary statistics.
+type SpeedTestResults struct {
+	BaseTestResults
+
+	// Results contains all test results
+	// Includes both successful and failed tests
+	Results []measure.SpeedTestResult
 }

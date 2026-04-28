@@ -1,4 +1,4 @@
-module github.com/bluegradienthorizon/proxytoolbox/internal/testers/singbox
+module github.com/bluegradienthorizon/proxytoolbox/internal/workers/singbox
 
 go 1.26
 

@@ -10,14 +10,15 @@ import (
 	"time"
 
 	"github.com/bluegradienthorizon/proxytoolbox/internal/cli/utils"
+	"github.com/bluegradienthorizon/proxytoolbox/measure"
 	"github.com/bluegradienthorizon/proxytoolbox/parsers"
-	"github.com/bluegradienthorizon/proxytoolbox/testers"
-	"github.com/bluegradienthorizon/proxytoolbox/testrunner"
+	"github.com/bluegradienthorizon/proxytoolbox/registry"
+	"github.com/bluegradienthorizon/proxytoolbox/runner"
 )
 
 func main() {
-	var testerDebug bool
-	flag.BoolVar(&testerDebug, "tester-debug", false, "Print tester stdout and stderr")
+	var workerDebug bool
+	flag.BoolVar(&workerDebug, "worker-debug", false, "Print worker stdout and stderr")
 	flag.Parse()
 
 	// Configure latency test parameters
@@ -35,28 +36,28 @@ func main() {
 		Concurrency: 1,
 		Rounds:      1,
 		Timeout:     10 * time.Second,
-		Mode:        testers.Download,
+		Mode:        measure.Download,
 		TestLimit:   5,
 		TargetBytes: 10 * 1024 * 1024,
 	}
 
-	reg := testrunner.NewRegistry()
-	// Scan only the directory where built tester binaries live.
+	reg := registry.NewRegistry()
+	// Scan only the directory where built worker binaries live.
 	reg.Discover("./bin")
 
-	testersMap := reg.All()
-	if len(testersMap) == 0 {
-		fmt.Println("No tester programs found.")
+	workersMap := reg.All()
+	if len(workersMap) == 0 {
+		fmt.Println("No worker programs found.")
 		return
 	}
 
-	fmt.Println("Found tester programs:")
-	var testerPath string
-	for _, list := range testersMap {
+	fmt.Println("Found worker programs:")
+	var workerPath string
+	for _, list := range workersMap {
 		for _, info := range list {
 			fmt.Printf("- %s (%s) at %s\n", info.Name, info.Version, info.Path)
-			if testerPath == "" {
-				testerPath = info.Path
+			if workerPath == "" {
+				workerPath = info.Path
 			}
 		}
 	}
@@ -110,9 +111,9 @@ func main() {
 
 	ctx := context.Background()
 
-	runner, err := testrunner.NewTestRunner(testrunner.TesterSettings{
-		TesterPath:  testerPath,
-		TesterDebug: testerDebug,
+	runner, err := runner.NewTestRunner(runner.RunnerSettings{
+		WorkerPath:  workerPath,
+		WorkerDebug: workerDebug,
 	})
 	if err != nil {
 		fmt.Printf("Failed to create test runner: %v\n", err)
@@ -136,7 +137,6 @@ func main() {
 
 	// Run speed tests if enabled
 	if runSpeedTestFlag {
-		// var speedResults []testers.SpeedTestResult
 		var speedErr error
 		_, taggedConfigs, speedErr = runSpeedTest(ctx, taggedConfigs, stSettings, runner)
 		if speedErr != nil {
@@ -148,7 +148,7 @@ func main() {
 }
 
 // Writes successful latency test results to out.txt
-func writeResultsToFile(sortedResults []testers.LatencyTestResult, configs []parsers.ProxyConfig) {
+func writeResultsToFile(sortedResults []measure.LatencyTestResult, configs []parsers.ProxyConfig) {
 	success := 0
 	f, err := os.Create("out.txt")
 	if err != nil {
