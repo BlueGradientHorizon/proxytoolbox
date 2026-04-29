@@ -43,24 +43,6 @@ type SpeedTestSettings struct {
 	Concurrency int           `json:"concurrency"`
 }
 
-// NewDownloadTestSettings creates default download speed test settings.
-func NewDownloadTestSettings() SpeedTestSettings {
-	return SpeedTestSettings{
-		Mode:        SpeedTestModeDownload,
-		Timeout:     20 * time.Second,
-		TargetBytes: 10 * 1024 * 1024,
-	}
-}
-
-// NewUploadTestSettings creates default upload speed test settings.
-func NewUploadTestSettings() SpeedTestSettings {
-	return SpeedTestSettings{
-		Mode:        SpeedTestModeUpload,
-		Timeout:     20 * time.Second,
-		TargetBytes: 10 * 1024 * 1024,
-	}
-}
-
 // SpeedTest performs speed testing on multiple proxies in parallel.
 type SpeedTest struct {
 	ctx      context.Context

@@ -30,13 +30,6 @@ type LatencyTestSettings struct {
 	Concurrency int           `json:"concurrency"`
 }
 
-// NewLatencyTestSettings creates default latency test settings.
-func NewLatencyTestSettings() LatencyTestSettings {
-	return LatencyTestSettings{
-		Timeout: 20 * time.Second,
-	}
-}
-
 // LatencyTest performs latency testing on multiple proxies in parallel.
 type LatencyTest struct {
 	ctx      context.Context
