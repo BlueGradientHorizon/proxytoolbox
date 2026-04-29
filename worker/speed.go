@@ -35,12 +35,12 @@ type SpeedTestProvider struct {
 
 // SpeedTestSettings configures the speed test behavior.
 type SpeedTestSettings struct {
-	Mode        SpeedTestMode
-	TestURL     string
-	RawRequest  []byte
-	Timeout     time.Duration
-	TargetBytes int64
-	Concurrency int
+	Mode        SpeedTestMode `json:"mode"`
+	TestURL     string        `json:"test_url,omitempty"`
+	RawRequest  []byte        `json:"raw_request"`
+	Timeout     time.Duration `json:"timeout"`
+	TargetBytes int64         `json:"target_bytes"`
+	Concurrency int           `json:"concurrency"`
 }
 
 // NewDownloadTestSettings creates default download speed test settings.

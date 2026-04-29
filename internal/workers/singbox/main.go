@@ -118,7 +118,7 @@ func (t *sbWorker) selectOutbounds(tags []string) ([]*core.OutboundConfig, []opt
 	return out, outbounds
 }
 
-func (t *sbWorker) TestLatency(ctx context.Context, settings worker.LatencySettings, tags []string, sendResult func(worker.Response)) error {
+func (t *sbWorker) TestLatency(ctx context.Context, settings worker.LatencyTestSettings, tags []string, sendResult func(worker.Response)) error {
 	configs, outbounds := t.selectOutbounds(tags)
 
 	// Report validation-failed for requested tags that are not present in the stored set
@@ -162,12 +162,7 @@ func (t *sbWorker) TestLatency(ctx context.Context, settings worker.LatencySetti
 		})
 	}
 
-	timeout := time.Duration(settings.TimeoutMs) * time.Millisecond
-	lt, err := worker.NewLatencyTest(ctx, worker.LatencyTestSettings{
-		TestURL:     settings.TestURL,
-		Timeout:     timeout,
-		Concurrency: settings.Concurrency,
-	}, proxies, dialers, CreateTLSConfigProvider())
+	lt, err := worker.NewLatencyTest(ctx, settings, proxies, dialers, CreateTLSConfigProvider())
 	if err != nil {
 		instance.Close()
 		return err
@@ -194,7 +189,7 @@ func (t *sbWorker) TestLatency(ctx context.Context, settings worker.LatencySetti
 	return nil
 }
 
-func (t *sbWorker) TestSpeed(ctx context.Context, settings worker.SpeedSettings, tags []string, sendResult func(worker.Response)) error {
+func (t *sbWorker) TestSpeed(ctx context.Context, settings worker.SpeedTestSettings, tags []string, sendResult func(worker.Response)) error {
 	configs, outbounds := t.selectOutbounds(tags)
 
 	// Report validation-failed for requested tags that are not present in the stored set
@@ -238,17 +233,7 @@ func (t *sbWorker) TestSpeed(ctx context.Context, settings worker.SpeedSettings,
 		})
 	}
 
-	timeout := time.Duration(settings.TimeoutMs) * time.Millisecond
-
-	stSettings := worker.SpeedTestSettings{
-		Mode:        worker.SpeedTestMode(settings.Mode),
-		TestURL:     settings.TestURL,
-		RawRequest:  settings.RawRequest,
-		Timeout:     timeout,
-		TargetBytes: settings.TargetBytes,
-		Concurrency: settings.Concurrency,
-	}
-	st, err := worker.NewSpeedTest(ctx, stSettings, proxies, dialers, CreateTLSConfigProvider())
+	st, err := worker.NewSpeedTest(ctx, settings, proxies, dialers, CreateTLSConfigProvider())
 	if err != nil {
 		instance.Close()
 		return err

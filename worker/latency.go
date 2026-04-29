@@ -25,9 +25,9 @@ type LatencyTestResult struct {
 
 // LatencyTestSettings configures the latency test behavior.
 type LatencyTestSettings struct {
-	TestURL     string
-	Timeout     time.Duration
-	Concurrency int
+	TestURL     string        `json:"test_url"`
+	Timeout     time.Duration `json:"timeout"`
+	Concurrency int           `json:"concurrency"`
 }
 
 // NewLatencyTestSettings creates default latency test settings.

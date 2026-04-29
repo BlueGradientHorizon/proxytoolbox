@@ -84,8 +84,8 @@ func (tr *TestRunner) RunLatencyTests(ctx context.Context, configs []parsers.Pro
 				Type:     worker.RequestTypeTest,
 				TestType: worker.TestTypeLatency,
 				Tags:     tags,
-				Settings: mustMarshal(worker.LatencySettings{
-					TimeoutMs:   int(c.Timeout.Milliseconds()),
+				Settings: mustMarshal(worker.LatencyTestSettings{
+					Timeout:     c.Timeout,
 					TestURL:     testURL,
 					Concurrency: base.Concurrency,
 				}),
@@ -153,9 +153,9 @@ func (tr *TestRunner) RunSpeedTests(ctx context.Context, configs []parsers.Proxy
 				Type:     worker.RequestTypeTest,
 				TestType: worker.TestTypeSpeed,
 				Tags:     tags,
-				Settings: mustMarshal(worker.SpeedSettings{
-					Mode:        string(c.Mode),
-					TimeoutMs:   int(c.Timeout.Milliseconds()),
+				Settings: mustMarshal(worker.SpeedTestSettings{
+					Mode:        c.Mode,
+					Timeout:     c.Timeout,
 					TargetBytes: c.TargetBytes,
 					Concurrency: base.Concurrency,
 					TestURL:     testURL,

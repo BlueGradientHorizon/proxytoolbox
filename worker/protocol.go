@@ -62,22 +62,6 @@ type CoreInfo struct {
 	Version string `json:"version"`
 }
 
-type LatencySettings struct {
-	TimeoutMs   int    `json:"timeout_ms"`
-	TestURL     string `json:"test_url"`
-	Concurrency int    `json:"concurrency"`
-}
-
-type SpeedSettings struct {
-	Mode        string `json:"mode"` // "download" | "upload"
-	TimeoutMs   int    `json:"timeout_ms"`
-	TargetBytes int64  `json:"target_bytes"`
-	Concurrency int    `json:"concurrency"`
-	TestURL     string `json:"test_url,omitempty"`
-	// RawRequest carries the captured HTTP wire format (headers, method, etc.)
-	RawRequest []byte `json:"raw_request"`
-}
-
 // RawConfig mirrors core.OutboundConfig but keeps Settings as RawMessage
 // so the worker can unmarshal it into the correct concrete type.
 type RawConfig struct {

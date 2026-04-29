@@ -20,8 +20,8 @@ import (
 type Worker interface {
 	Info() CoreInfo
 	Validate(ctx context.Context, configs []*core.OutboundConfig, sendResult func(Response)) error
-	TestLatency(ctx context.Context, settings LatencySettings, tags []string, sendResult func(Response)) error
-	TestSpeed(ctx context.Context, settings SpeedSettings, tags []string, sendResult func(Response)) error
+	TestLatency(ctx context.Context, settings LatencyTestSettings, tags []string, sendResult func(Response)) error
+	TestSpeed(ctx context.Context, settings SpeedTestSettings, tags []string, sendResult func(Response)) error
 }
 
 // Run parses --info / --run and blocks forever serving TCP requests.
@@ -111,12 +111,12 @@ func handle(conn net.Conn, worker Worker) {
 			case RequestTypeTest:
 				switch req.TestType {
 				case TestTypeLatency:
-					var s LatencySettings
+					var s LatencyTestSettings
 					if err = json.Unmarshal(req.Settings, &s); err == nil {
 						err = worker.TestLatency(ctx, s, req.Tags, sw.Write)
 					}
 				case TestTypeSpeed:
-					var s SpeedSettings
+					var s SpeedTestSettings
 					if err = json.Unmarshal(req.Settings, &s); err == nil {
 						err = worker.TestSpeed(ctx, s, req.Tags, sw.Write)
 					}
