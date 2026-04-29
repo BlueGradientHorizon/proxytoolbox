@@ -238,14 +238,10 @@ func (t *sbWorker) TestSpeed(ctx context.Context, settings worker.SpeedSettings,
 		})
 	}
 
-	mode := worker.SpeedTestModeDownload
-	if settings.Mode == "upload" {
-		mode = worker.SpeedTestModeUpload
-	}
 	timeout := time.Duration(settings.TimeoutMs) * time.Millisecond
 
 	stSettings := worker.SpeedTestSettings{
-		Mode:        mode,
+		Mode:        worker.SpeedTestMode(settings.Mode),
 		TestURL:     settings.TestURL,
 		RawRequest:  settings.RawRequest,
 		Timeout:     timeout,

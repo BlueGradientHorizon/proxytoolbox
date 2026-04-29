@@ -20,7 +20,6 @@ type ProxyInfo struct {
 type LatencyTestResult struct {
 	Tag   string
 	Delay int64
-	Proxy ProxyInfo
 	Error error
 }
 
@@ -107,7 +106,6 @@ func (t *LatencyTest) Run(resChans ...chan<- LatencyTestResult) func() {
 		return LatencyTestResult{
 			Tag:   item.proxy.Tag,
 			Delay: val,
-			Proxy: item.proxy,
 			Error: err,
 		}
 	}, resChans...)

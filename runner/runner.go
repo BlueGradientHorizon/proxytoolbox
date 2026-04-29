@@ -120,40 +120,30 @@ func (tr *TestRunner) RunSpeedTests(ctx context.Context, configs []parsers.Proxy
 		progressCb, _ = base.ProgressCallback.(func(SpeedTestResult))
 	}
 
-	mode := "download"
-	if stRunnerSettings.Mode == SpeedTestModeUpload {
-		mode = "upload"
-	}
-
 	itr := &ipcTestRunner[SpeedTestResult, *SpeedTestRunnerSettings]{
 		tr:       tr,
 		ctx:      ctx,
 		configs:  configs,
 		settings: &stRunnerSettings,
-		buildTestReq: func(currentConfigs []parsers.ProxyConfig, c *SpeedTestRunnerSettings) worker.Request {
+		buildTestReq: func(currentConfigs[]parsers.ProxyConfig, c *SpeedTestRunnerSettings) worker.Request {
 			tags := make([]string, len(currentConfigs))
 			for i, p := range currentConfigs {
 				tags[i] = p.Config.Tag
 			}
 
-			wMode := worker.SpeedTestModeDownload
-			if c.Mode == SpeedTestModeUpload {
-				wMode = worker.SpeedTestModeUpload
-			}
-
 			// 1. Generate the URL from provider
-			testURL := c.Provider.GetURL(wMode, c.TargetBytes)
+			testURL := c.Provider.GetURL(c.Mode, c.TargetBytes)
 
 			// Determine HTTP method
 			method := http.MethodGet
-			if c.Mode == SpeedTestModeUpload {
+			if c.Mode == worker.SpeedTestModeUpload {
 				method = http.MethodPost
 			}
 
 			// 2. Create a temporary request and apply ModifyRequest logic
 			req, _ := http.NewRequest(method, testURL, nil)
 			if c.Provider.ModifyRequest != nil {
-				c.Provider.ModifyRequest(req, wMode, c.TargetBytes)
+				c.Provider.ModifyRequest(req, c.Mode, c.TargetBytes)
 			}
 
 			// 3. Serialize the request to wire format (excluding body)
@@ -164,7 +154,7 @@ func (tr *TestRunner) RunSpeedTests(ctx context.Context, configs []parsers.Proxy
 				TestType: worker.TestTypeSpeed,
 				Tags:     tags,
 				Settings: mustMarshal(worker.SpeedSettings{
-					Mode:        mode,
+					Mode:        string(c.Mode),
 					TimeoutMs:   int(c.Timeout.Milliseconds()),
 					TargetBytes: c.TargetBytes,
 					Concurrency: base.Concurrency,
@@ -232,10 +222,7 @@ func (itr *ipcTestRunner[TResult, TSettings]) run() (any, error) {
 
 	err = proc.SendRequest(itr.ctx, validateReq, func(r worker.Response) {
 		if r.Type == worker.ResponseTypeValidation {
-			validationErrors = make([]ValidationError, len(r.ValidationErrors))
-			for j, ve := range r.ValidationErrors {
-				validationErrors[j] = ValidationError{Tag: ve.Tag, Error: ve.Error}
-			}
+			validationErrors = r.ValidationErrors
 			if base.CoreCreatedCallback != nil {
 				base.CoreCreatedCallback(validationErrors)
 			}

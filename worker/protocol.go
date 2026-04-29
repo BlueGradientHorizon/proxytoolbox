@@ -42,6 +42,42 @@ type Request struct {
 	Settings json.RawMessage `json:"settings,omitempty"`
 }
 
+type ValidationError struct {
+	Tag   string `json:"tag"`
+	Error string `json:"error"`
+}
+
+// Response is streamed back to the library (one JSON value per line).
+type Response struct {
+	Type             ResponseType      `json:"type"`
+	ValidationErrors []ValidationError `json:"validation_errors,omitempty"`
+	Tag              string            `json:"tag,omitempty"`
+	Error            string            `json:"error,omitempty"`
+	LatencyMs        int64             `json:"latency_ms,omitempty"`
+	Speed            float64           `json:"speed,omitempty"`
+}
+
+type CoreInfo struct {
+	Name    string `json:"name"`
+	Version string `json:"version"`
+}
+
+type LatencySettings struct {
+	TimeoutMs   int    `json:"timeout_ms"`
+	TestURL     string `json:"test_url"`
+	Concurrency int    `json:"concurrency"`
+}
+
+type SpeedSettings struct {
+	Mode        string `json:"mode"` // "download" | "upload"
+	TimeoutMs   int    `json:"timeout_ms"`
+	TargetBytes int64  `json:"target_bytes"`
+	Concurrency int    `json:"concurrency"`
+	TestURL     string `json:"test_url,omitempty"`
+	// RawRequest carries the captured HTTP wire format (headers, method, etc.)
+	RawRequest []byte `json:"raw_request"`
+}
+
 // RawConfig mirrors core.OutboundConfig but keeps Settings as RawMessage
 // so the worker can unmarshal it into the correct concrete type.
 type RawConfig struct {
@@ -98,40 +134,4 @@ func (rc *RawConfig) ToCore() (*core.OutboundConfig, error) {
 		return nil, fmt.Errorf("unknown type %s", rc.Type)
 	}
 	return cfg, nil
-}
-
-type ValidationError struct {
-	Tag   string `json:"tag"`
-	Error string `json:"error"`
-}
-
-// Response is streamed back to the library (one JSON value per line).
-type Response struct {
-	Type             ResponseType      `json:"type"`
-	ValidationErrors []ValidationError `json:"validation_errors,omitempty"`
-	Tag              string            `json:"tag,omitempty"`
-	Error            string            `json:"error,omitempty"`
-	LatencyMs        int64             `json:"latency_ms,omitempty"`
-	Speed            float64           `json:"speed,omitempty"`
-}
-
-type CoreInfo struct {
-	Name    string `json:"name"`
-	Version string `json:"version"`
-}
-
-type LatencySettings struct {
-	TimeoutMs   int    `json:"timeout_ms"`
-	TestURL     string `json:"test_url"`
-	Concurrency int    `json:"concurrency"`
-}
-
-type SpeedSettings struct {
-	Mode        string `json:"mode"` // "download" | "upload"
-	TimeoutMs   int    `json:"timeout_ms"`
-	TargetBytes int64  `json:"target_bytes"`
-	Concurrency int    `json:"concurrency"`
-	TestURL     string `json:"test_url,omitempty"`
-	// RawRequest carries the captured HTTP wire format (headers, method, etc.)
-	RawRequest []byte `json:"raw_request"`
 }

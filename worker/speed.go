@@ -16,16 +16,15 @@ import (
 type SpeedTestResult struct {
 	Tag   string
 	Speed float64
-	Proxy ProxyInfo
 	Error error
 }
 
 // SpeedTestMode indicates whether to test download or upload speed.
-type SpeedTestMode int
+type SpeedTestMode string
 
 const (
-	SpeedTestModeDownload SpeedTestMode = iota
-	SpeedTestModeUpload
+	SpeedTestModeDownload SpeedTestMode = "download"
+	SpeedTestModeUpload   SpeedTestMode = "upload"
 )
 
 // SpeedTestProvider defines how to construct speed test requests.
@@ -122,7 +121,6 @@ func (t *SpeedTest) Run(resChans ...chan<- SpeedTestResult) func() {
 					case c <- SpeedTestResult{
 						Tag:   t.items[i].proxy.Tag,
 						Speed: -1,
-						Proxy: t.items[i].proxy,
 						Error: err,
 					}:
 					case <-t.ctx.Done():
@@ -148,7 +146,6 @@ func (t *SpeedTest) Run(resChans ...chan<- SpeedTestResult) func() {
 		return SpeedTestResult{
 			Tag:   item.proxy.Tag,
 			Speed: val,
-			Proxy: item.proxy,
 			Error: err,
 		}
 	}, resChans...)

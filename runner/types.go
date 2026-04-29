@@ -16,31 +16,20 @@ type RunnerSettings struct {
 }
 
 // ValidationError represents an error validating proxy configurations
-type ValidationError struct {
-	Tag   string
-	Error string
-}
+type ValidationError = worker.ValidationError
 
 // LatencyTestResult contains the result of a latency test for a single proxy.
-type LatencyTestResult struct {
-	Tag   string
-	Delay int64
-	Error error
-}
+type LatencyTestResult = worker.LatencyTestResult
 
 // SpeedTestResult contains the result of a speed test for a single proxy.
-type SpeedTestResult struct {
-	Tag   string
-	Speed float64
-	Error error
-}
+type SpeedTestResult = worker.SpeedTestResult
 
 // SpeedTestMode indicates whether to test download or upload speed.
-type SpeedTestMode string
+type SpeedTestMode = worker.SpeedTestMode
 
 const (
-	SpeedTestModeDownload SpeedTestMode = "download"
-	SpeedTestModeUpload   SpeedTestMode = "upload"
+	SpeedTestModeDownload = worker.SpeedTestModeDownload
+	SpeedTestModeUpload   = worker.SpeedTestModeUpload
 )
 
 // BaseTestRunnerSettings contains common configuration fields shared by all test types.
