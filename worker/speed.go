@@ -110,11 +110,38 @@ func NewSpeedTest(
 // Results are sent to all provided result channels.
 // Returns a function that waits for all goroutines to complete.
 func (t *SpeedTest) Run(resChans ...chan<- SpeedTestResult) func() {
+	// Reconstruct the request once
+	buf := bufio.NewReader(bytes.NewReader(t.settings.RawRequest))
+	req, err := http.ReadRequest(buf)
+	if err != nil {
+		err = fmt.Errorf("failed to parse raw request: %w", err)
+		for i := range t.items {
+			for _, c := range resChans {
+				if c != nil {
+					select {
+					case c <- SpeedTestResult{
+						Tag:   t.items[i].proxy.Tag,
+						Speed: -1,
+						Proxy: t.items[i].proxy,
+						Error: err,
+					}:
+					case <-t.ctx.Done():
+						return func() {}
+					}
+				}
+			}
+		}
+		return func() {}
+	}
+	req.RequestURI = ""
+	req.URL, _ = url.Parse(t.settings.TestURL)
+	baseReq := req
+
 	return runParallel(t.ctx, t.settings.Timeout, len(t.items), t.settings.Concurrency, func(ctx context.Context, i int) SpeedTestResult {
 		item := t.items[i]
 		defer item.client.CloseIdleConnections()
 
-		val, err := t.runTest(ctx, item)
+		val, err := t.runTest(ctx, item, baseReq)
 		if err != nil {
 			val = -1
 		}
@@ -127,25 +154,15 @@ func (t *SpeedTest) Run(resChans ...chan<- SpeedTestResult) func() {
 	}, resChans...)
 }
 
-func (t *SpeedTest) runTest(ctx context.Context, item speedTestItem) (float64, error) {
-	// 1. Reconstruct the request from bytes
-	buf := bufio.NewReader(bytes.NewReader(t.settings.RawRequest))
-	req, err := http.ReadRequest(buf)
-	if err != nil {
-		return 0, fmt.Errorf("failed to parse raw request: %w", err)
-	}
+func (t *SpeedTest) runTest(ctx context.Context, item speedTestItem, baseReq *http.Request) (float64, error) {
+	req := baseReq.WithContext(ctx)
 
-	// 2. Re-attach absolute URL and Context (ReadRequest leaves these empty)
-	req.RequestURI = ""
-	req.URL, _ = url.Parse(t.settings.TestURL)
-	req = req.WithContext(ctx)
-
-	// 3. Attach the generated body for uploads
+	// Attach the generated body for uploads
 	if t.settings.Mode == SpeedTestModeUpload {
 		req.Body = io.NopCloser(io.LimitReader(zeroReader{}, t.settings.TargetBytes))
 	}
 
-	// 4. Execute using the core-specific client
+	// Execute using the core-specific client
 	start := time.Now()
 	resp, err := item.client.Do(req)
 	if err != nil {
