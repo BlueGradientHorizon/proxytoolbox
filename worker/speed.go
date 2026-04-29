@@ -1,11 +1,14 @@
 package worker
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"time"
 )
 
@@ -34,7 +37,8 @@ type SpeedTestProvider struct {
 // SpeedTestSettings configures the speed test behavior.
 type SpeedTestSettings struct {
 	Mode        SpeedTestMode
-	Provider    SpeedTestProvider
+	TestURL     string
+	RawRequest  []byte
 	Timeout     time.Duration
 	TargetBytes int64
 	Concurrency int
@@ -79,12 +83,8 @@ func NewSpeedTest(
 	dialers []DialerFunc,
 	tlsConfigProvider TLSConfigProvider,
 ) (*SpeedTest, error) {
-	if sett.Provider.GetURL == nil {
-		return nil, errors.New("NewSpeedTest: provider's GetURL is nil")
-	}
-
-	if sett.Provider.ModifyRequest == nil {
-		sett.Provider.ModifyRequest = func(r *http.Request, m SpeedTestMode, b int64) {}
+	if sett.TestURL == "" && len(sett.RawRequest) == 0 {
+		return nil, errors.New("NewSpeedTest: TestURL or RawRequest is empty")
 	}
 
 	if len(proxies) != len(dialers) {
@@ -128,26 +128,24 @@ func (t *SpeedTest) Run(resChans ...chan<- SpeedTestResult) func() {
 }
 
 func (t *SpeedTest) runTest(ctx context.Context, item speedTestItem) (float64, error) {
-	var method string
-	var body io.Reader
-
-	switch t.settings.Mode {
-	case SpeedTestModeDownload:
-		method = http.MethodGet
-	case SpeedTestModeUpload:
-		method = http.MethodPost
-		body = io.LimitReader(zeroReader{}, t.settings.TargetBytes)
-	}
-
-	finalURL := t.settings.Provider.GetURL(t.settings.Mode, t.settings.TargetBytes)
-
-	req, err := http.NewRequestWithContext(ctx, method, finalURL, body)
+	// 1. Reconstruct the request from bytes
+	buf := bufio.NewReader(bytes.NewReader(t.settings.RawRequest))
+	req, err := http.ReadRequest(buf)
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("failed to parse raw request: %w", err)
 	}
 
-	t.settings.Provider.ModifyRequest(req, t.settings.Mode, t.settings.TargetBytes)
+	// 2. Re-attach absolute URL and Context (ReadRequest leaves these empty)
+	req.RequestURI = ""
+	req.URL, _ = url.Parse(t.settings.TestURL)
+	req = req.WithContext(ctx)
 
+	// 3. Attach the generated body for uploads
+	if t.settings.Mode == SpeedTestModeUpload {
+		req.Body = io.NopCloser(io.LimitReader(zeroReader{}, t.settings.TargetBytes))
+	}
+
+	// 4. Execute using the core-specific client
 	start := time.Now()
 	resp, err := item.client.Do(req)
 	if err != nil {

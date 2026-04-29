@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httputil"
 	"sync"
 
 	"github.com/bluegradienthorizon/proxytoolbox/core"
@@ -133,10 +135,24 @@ func (tr *TestRunner) RunSpeedTests(ctx context.Context, configs []parsers.Proxy
 			if c.Mode == SpeedTestModeUpload {
 				wMode = worker.SpeedTestModeUpload
 			}
-			var testURL string
-			if c.Provider.GetURL != nil {
-				testURL = c.Provider.GetURL(wMode, c.TargetBytes)
+
+			// 1. Generate the URL from provider
+			testURL := c.Provider.GetURL(wMode, c.TargetBytes)
+
+			// Determine HTTP method
+			method := http.MethodGet
+			if c.Mode == SpeedTestModeUpload {
+				method = http.MethodPost
 			}
+
+			// 2. Create a temporary request and apply ModifyRequest logic
+			req, _ := http.NewRequest(method, testURL, nil)
+			if c.Provider.ModifyRequest != nil {
+				c.Provider.ModifyRequest(req, wMode, c.TargetBytes)
+			}
+
+			// 3. Serialize the request to wire format (excluding body)
+			rawReq, _ := httputil.DumpRequest(req, false)
 
 			return worker.Request{
 				Type:     worker.RequestTypeTest,
@@ -148,6 +164,7 @@ func (tr *TestRunner) RunSpeedTests(ctx context.Context, configs []parsers.Proxy
 					TargetBytes: c.TargetBytes,
 					Concurrency: base.Concurrency,
 					TestURL:     testURL,
+					RawRequest:  rawReq,
 				}),
 			}
 		},

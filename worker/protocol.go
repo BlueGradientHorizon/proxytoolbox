@@ -132,4 +132,6 @@ type SpeedSettings struct {
 	TargetBytes int64  `json:"target_bytes"`
 	Concurrency int    `json:"concurrency"`
 	TestURL     string `json:"test_url,omitempty"`
+	// RawRequest carries the captured HTTP wire format (headers, method, etc.)
+	RawRequest []byte `json:"raw_request"`
 }
