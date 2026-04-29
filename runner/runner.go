@@ -66,9 +66,12 @@ func (tr *TestRunner) RunLatencyTests(ctx context.Context, configs []parsers.Pro
 		progressCb, _ = base.ProgressCallback.(func(LatencyTestResult))
 	}
 
-	res, err := runIPCTests(
-		tr, ctx, configs, &ltRunnerSettings,
-		func(currentConfigs []parsers.ProxyConfig, c *LatencyTestRunnerSettings) worker.Request {
+	itr := &ipcTestRunner[LatencyTestResult, *LatencyTestRunnerSettings]{
+		tr:       tr,
+		ctx:      ctx,
+		configs:  configs,
+		settings: &ltRunnerSettings,
+		buildTestReq: func(currentConfigs []parsers.ProxyConfig, c *LatencyTestRunnerSettings) worker.Request {
 			testURL := c.TestURL
 			if testURL == "" {
 				testURL = presets.Google204
@@ -88,20 +91,21 @@ func (tr *TestRunner) RunLatencyTests(ctx context.Context, configs []parsers.Pro
 				}),
 			}
 		},
-		func(r worker.Response) LatencyTestResult {
+		convert: func(r worker.Response) LatencyTestResult {
 			var err error
 			if r.Error != "" {
 				err = fmt.Errorf("%s", r.Error)
 			}
 			return LatencyTestResult{Tag: r.Tag, Delay: r.LatencyMs, Error: err}
 		},
-		progressCb,
-		func(r LatencyTestResult) bool { return r.Error == nil && r.Delay > 0 },
-		func(r LatencyTestResult) string { return r.Tag },
-		func(rs []LatencyTestResult, ve []ValidationError, sort bool) any {
+		onProgress: progressCb,
+		isSuccess:  func(r LatencyTestResult) bool { return r.Error == nil && r.Delay > 0 },
+		getTag:     func(r LatencyTestResult) string { return r.Tag },
+		aggregate: func(rs []LatencyTestResult, ve []ValidationError, sort bool) any {
 			return aggregateLatencyResults(rs, ve, sort)
 		},
-	)
+	}
+	res, err := itr.run()
 	if err != nil {
 		return nil, err
 	}
@@ -121,9 +125,12 @@ func (tr *TestRunner) RunSpeedTests(ctx context.Context, configs []parsers.Proxy
 		mode = "upload"
 	}
 
-	res, err := runIPCTests(
-		tr, ctx, configs, &stRunnerSettings,
-		func(currentConfigs []parsers.ProxyConfig, c *SpeedTestRunnerSettings) worker.Request {
+	itr := &ipcTestRunner[SpeedTestResult, *SpeedTestRunnerSettings]{
+		tr:       tr,
+		ctx:      ctx,
+		configs:  configs,
+		settings: &stRunnerSettings,
+		buildTestReq: func(currentConfigs []parsers.ProxyConfig, c *SpeedTestRunnerSettings) worker.Request {
 			tags := make([]string, len(currentConfigs))
 			for i, p := range currentConfigs {
 				tags[i] = p.Config.Tag
@@ -166,48 +173,51 @@ func (tr *TestRunner) RunSpeedTests(ctx context.Context, configs []parsers.Proxy
 				}),
 			}
 		},
-		func(r worker.Response) SpeedTestResult {
+		convert: func(r worker.Response) SpeedTestResult {
 			var err error
 			if r.Error != "" {
 				err = fmt.Errorf("%s", r.Error)
 			}
 			return SpeedTestResult{Tag: r.Tag, Speed: r.Speed, Error: err}
 		},
-		progressCb,
-		func(r SpeedTestResult) bool { return r.Error == nil && r.Speed > 0 },
-		func(r SpeedTestResult) string { return r.Tag },
-		func(rs []SpeedTestResult, ve []ValidationError, sort bool) any {
+		onProgress: progressCb,
+		isSuccess:  func(r SpeedTestResult) bool { return r.Error == nil && r.Speed > 0 },
+		getTag:     func(r SpeedTestResult) string { return r.Tag },
+		aggregate: func(rs []SpeedTestResult, ve []ValidationError, sort bool) any {
 			return aggregateSpeedResults(rs, ve, sort)
 		},
-	)
+	}
+	res, err := itr.run()
 	if err != nil {
 		return nil, err
 	}
 	return res.(*SpeedTestResults), nil
 }
 
-func runIPCTests[TResult any, TSettings testSettings](
-	tr *TestRunner,
-	ctx context.Context,
-	configs []parsers.ProxyConfig,
-	settings TSettings,
-	buildTestReq func([]parsers.ProxyConfig, TSettings) worker.Request,
-	convert func(worker.Response) TResult,
-	onProgress func(TResult),
-	isSuccess func(TResult) bool,
-	getTag func(TResult) string,
-	aggregate func([]TResult, []ValidationError, bool) any,
-) (any, error) {
-	base := settings.getBaseSettings()
+type ipcTestRunner[TResult any, TSettings testSettings] struct {
+	tr           *TestRunner
+	ctx          context.Context
+	configs      []parsers.ProxyConfig
+	settings     TSettings
+	buildTestReq func([]parsers.ProxyConfig, TSettings) worker.Request
+	convert      func(worker.Response) TResult
+	onProgress   func(TResult)
+	isSuccess    func(TResult) bool
+	getTag       func(TResult) string
+	aggregate    func([]TResult, []ValidationError, bool) any
+}
 
-	for i := range configs {
-		configs[i].Config.Tag = fmt.Sprintf("outbound-%d", i)
+func (itr *ipcTestRunner[TResult, TSettings]) run() (any, error) {
+	base := itr.settings.getBaseSettings()
+
+	for i := range itr.configs {
+		itr.configs[i].Config.Tag = fmt.Sprintf("outbound-%d", i)
 	}
 
-	tr.testMu.Lock()
-	defer tr.testMu.Unlock()
+	itr.tr.testMu.Lock()
+	defer itr.tr.testMu.Unlock()
 
-	proc, err := tr.ensureProc()
+	proc, err := itr.tr.ensureProc()
 	if err != nil {
 		return nil, err
 	}
@@ -217,10 +227,10 @@ func runIPCTests[TResult any, TSettings testSettings](
 
 	validateReq := worker.Request{
 		Type:    worker.RequestTypeValidate,
-		Configs: toRawConfigs(extractConfigs(configs)),
+		Configs: toRawConfigs(extractConfigs(itr.configs)),
 	}
 
-	err = proc.SendRequest(ctx, validateReq, func(r worker.Response) {
+	err = proc.SendRequest(itr.ctx, validateReq, func(r worker.Response) {
 		if r.Type == worker.ResponseTypeValidation {
 			validationErrors = make([]ValidationError, len(r.ValidationErrors))
 			for j, ve := range r.ValidationErrors {
@@ -233,20 +243,20 @@ func runIPCTests[TResult any, TSettings testSettings](
 	})
 	if err != nil {
 		if err != ErrWorkerBusy {
-			tr.invalidateProc()
+			itr.tr.invalidateProc()
 		}
 		return nil, fmt.Errorf("validation: %w", err)
 	}
 
-	currentConfigs := configs
+	currentConfigs := itr.configs
 
 	// --- Test phase ---
 	var final []TResult
 
 	for round := 0; round < base.Rounds; round++ {
 		select {
-		case <-ctx.Done():
-			return aggregate(final, validationErrors, base.SortResults), ctx.Err()
+		case <-itr.ctx.Done():
+			return itr.aggregate(final, validationErrors, base.SortResults), itr.ctx.Err()
 		default:
 		}
 
@@ -254,23 +264,23 @@ func runIPCTests[TResult any, TSettings testSettings](
 			base.RoundStartedCallback(round, len(currentConfigs))
 		}
 
-		req := buildTestReq(currentConfigs, settings)
+		req := itr.buildTestReq(currentConfigs, itr.settings)
 		var roundResults []TResult
 
-		err = proc.SendRequest(ctx, req, func(r worker.Response) {
+		err = proc.SendRequest(itr.ctx, req, func(r worker.Response) {
 			switch r.Type {
 			case worker.ResponseTypeResult:
-				res := convert(r)
+				res := itr.convert(r)
 				roundResults = append(roundResults, res)
-				if onProgress != nil {
-					onProgress(res)
+				if itr.onProgress != nil {
+					itr.onProgress(res)
 				}
 			}
 		})
 
 		if err != nil {
 			if err != ErrWorkerBusy {
-				tr.invalidateProc()
+				itr.tr.invalidateProc()
 			}
 			return nil, fmt.Errorf("round %d: %w", round+1, err)
 		}
@@ -283,9 +293,9 @@ func runIPCTests[TResult any, TSettings testSettings](
 
 		if round < base.Rounds-1 && base.FilterFailed {
 			good := make(map[string]bool)
-			for _, r := range roundResults {
-				if isSuccess(r) {
-					good[getTag(r)] = true
+			for _, res := range roundResults {
+				if itr.isSuccess(res) {
+					good[itr.getTag(res)] = true
 				}
 			}
 			if len(good) == 0 {
@@ -301,5 +311,5 @@ func runIPCTests[TResult any, TSettings testSettings](
 		}
 	}
 
-	return aggregate(final, validationErrors, base.SortResults), nil
+	return itr.aggregate(final, validationErrors, base.SortResults), nil
 }
