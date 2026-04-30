@@ -80,13 +80,21 @@ func (tr *TestRunner) RunLatencyTests(ctx context.Context, configs []parsers.Pro
 			for i, p := range currentConfigs {
 				tags[i] = p.Config.Tag
 			}
+
+			req, _ := http.NewRequest(http.MethodHead, testURL, nil)
+			if c.ModifyRequest != nil {
+				c.ModifyRequest(req)
+			}
+			rawReq, _ := httputil.DumpRequest(req, false)
+
 			return worker.Request{
 				Type:     worker.RequestTypeTest,
 				TestType: worker.TestTypeLatency,
 				Tags:     tags,
 				Settings: mustMarshal(worker.LatencyTestSettings{
-					Timeout:     c.Timeout,
 					TestURL:     testURL,
+					RawRequest:  rawReq,
+					Timeout:     c.Timeout,
 					Concurrency: base.Concurrency,
 				}),
 			}
@@ -125,7 +133,7 @@ func (tr *TestRunner) RunSpeedTests(ctx context.Context, configs []parsers.Proxy
 		ctx:      ctx,
 		configs:  configs,
 		settings: &stRunnerSettings,
-		buildTestReq: func(currentConfigs[]parsers.ProxyConfig, c *SpeedTestRunnerSettings) worker.Request {
+		buildTestReq: func(currentConfigs []parsers.ProxyConfig, c *SpeedTestRunnerSettings) worker.Request {
 			tags := make([]string, len(currentConfigs))
 			for i, p := range currentConfigs {
 				tags[i] = p.Config.Tag

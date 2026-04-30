@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"net/http"
 	"time"
 
 	"github.com/bluegradienthorizon/proxytoolbox/worker"
@@ -80,6 +81,9 @@ type LatencyTestRunnerSettings struct {
 
 	// TestURL specifies the URL to test latency against
 	TestURL string
+
+	// ModifyRequest allows modifying the request before it's sent
+	ModifyRequest func(req *http.Request)
 }
 
 // SpeedTestRunnerSettings configures speed test execution parameters.

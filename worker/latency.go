@@ -1,11 +1,14 @@
 package worker
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"time"
 )
 
@@ -25,7 +28,8 @@ type LatencyTestResult struct {
 
 // LatencyTestSettings configures the latency test behavior.
 type LatencyTestSettings struct {
-	TestURL     string        `json:"test_url"`
+	TestURL     string        `json:"test_url,omitempty"`
+	RawRequest  []byte        `json:"raw_request"`
 	Timeout     time.Duration `json:"timeout"`
 	Concurrency int           `json:"concurrency"`
 }
@@ -52,8 +56,8 @@ func NewLatencyTest(
 	dialers []DialerFunc,
 	tlsConfigProvider TLSConfigProvider,
 ) (*LatencyTest, error) {
-	if sett.TestURL == "" {
-		return nil, errors.New("LatencyTest: empty settings link")
+	if sett.TestURL == "" && len(sett.RawRequest) == 0 {
+		return nil, errors.New("LatencyTest: TestURL or RawRequest is empty")
 	}
 
 	if len(proxies) != len(dialers) {
@@ -88,11 +92,36 @@ func NewLatencyTest(
 // Results are sent to all provided result channels.
 // Returns a function that waits for all goroutines to complete.
 func (t *LatencyTest) Run(resChans ...chan<- LatencyTestResult) func() {
+	buf := bufio.NewReader(bytes.NewReader(t.settings.RawRequest))
+	req, err := http.ReadRequest(buf)
+	if err != nil {
+		err = fmt.Errorf("failed to parse raw request: %w", err)
+		for i := range t.items {
+			for _, c := range resChans {
+				if c != nil {
+					select {
+					case c <- LatencyTestResult{
+						Tag:   t.items[i].proxy.Tag,
+						Delay: -1,
+						Error: err,
+					}:
+					case <-t.ctx.Done():
+						return func() {}
+					}
+				}
+			}
+		}
+		return func() {}
+	}
+	req.RequestURI = ""
+	req.URL, _ = url.Parse(t.settings.TestURL)
+	baseReq := req
+
 	return runParallel(t.ctx, t.settings.Timeout, len(t.items), t.settings.Concurrency, func(ctx context.Context, i int) LatencyTestResult {
 		item := t.items[i]
 		defer item.client.CloseIdleConnections()
 
-		val, err := t.runTest(ctx, item)
+		val, err := t.runTest(ctx, item, baseReq)
 		if err != nil {
 			val = -1
 		}
@@ -104,11 +133,8 @@ func (t *LatencyTest) Run(resChans ...chan<- LatencyTestResult) func() {
 	}, resChans...)
 }
 
-func (t *LatencyTest) runTest(ctx context.Context, item latencyTestItem) (int64, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodHead, t.settings.TestURL, nil)
-	if err != nil {
-		return -1, err
-	}
+func (t *LatencyTest) runTest(ctx context.Context, item latencyTestItem, baseReq *http.Request) (int64, error) {
+	req := baseReq.WithContext(ctx)
 
 	resp, err := item.client.Do(req)
 	if err != nil {
