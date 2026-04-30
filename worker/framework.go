@@ -24,6 +24,226 @@ type Worker interface {
 	TestSpeed(ctx context.Context, settings SpeedTestSettings, tags []string, sendResult func(Response)) error
 }
 
+// CoreAdapter defines the minimal interface that concrete proxy cores must
+// implement to plug into BaseWorker. It contains only core-specific hooks;
+// all lifecycle, routing, and IPC logic is handled by BaseWorker.
+type CoreAdapter interface {
+	// Info returns core identification metadata.
+	Info() CoreInfo
+	// Convert transforms a generic OutboundConfig into a core-specific object.
+	Convert(cfg *core.OutboundConfig) (any, error)
+	// ValidateSingle checks a single converted config for validity.
+	ValidateSingle(ctx context.Context, obj any) error
+	// ValidateBatch checks a batch of converted configs for cross-config conflicts.
+	ValidateBatch(ctx context.Context, objs []any) error
+	// CreateInstance builds a core-specific proxy instance from converted configs.
+	CreateInstance(ctx context.Context, converted []any) (any, error)
+	// StartInstance starts the given instance.
+	StartInstance(inst any) error
+	// ExtractDialers extracts proxy metadata and dialer functions from a running instance.
+	ExtractDialers(inst any) ([]ProxyInfo, []DialerFunc, error)
+	// CloseInstance tears down the given instance.
+	CloseInstance(inst any)
+	// TLSProvider returns a TLS configuration provider for the core.
+	TLSProvider(ctx context.Context) TLSConfigProvider
+}
+
+// BaseWorker provides a generic, reusable implementation of the Worker interface.
+// It orchestrates config validation, tag filtering, test execution, and IPC
+// result streaming. Concrete cores supply a CoreAdapter to handle core-specific
+// operations.
+type BaseWorker struct {
+	adapter CoreAdapter
+	mu      sync.Mutex
+	configs []*core.OutboundConfig
+	objects []any
+}
+
+// NewBaseWorker creates a new BaseWorker that delegates core-specific operations
+// to the provided adapter.
+func NewBaseWorker(adapter CoreAdapter) *BaseWorker {
+	return &BaseWorker{adapter: adapter}
+}
+
+// Info returns core information from the adapter.
+func (bw *BaseWorker) Info() CoreInfo {
+	return bw.adapter.Info()
+}
+
+// Validate converts configurations, validates them individually and as a batch,
+// streams validation errors via IPC, and stores the valid survivors.
+func (bw *BaseWorker) Validate(ctx context.Context, configs []*core.OutboundConfig, sendResult func(Response)) error {
+	var validationErrors []ValidationError
+	var validConfigs []*core.OutboundConfig
+	var validObjects []any
+
+	for _, cfg := range configs {
+		obj, err := bw.adapter.Convert(cfg)
+		if err != nil {
+			validationErrors = append(validationErrors, ValidationError{
+				Tag:   cfg.Tag,
+				Error: "convert: " + cfg.Type + ": " + err.Error(),
+			})
+			continue
+		}
+		if err := bw.adapter.ValidateSingle(ctx, obj); err != nil {
+			validationErrors = append(validationErrors, ValidationError{
+				Tag:   cfg.Tag,
+				Error: "instantiate: " + cfg.Type + ": " + err.Error(),
+			})
+			continue
+		}
+		validConfigs = append(validConfigs, cfg)
+		validObjects = append(validObjects, obj)
+	}
+
+	if len(validObjects) > 0 {
+		if err := bw.adapter.ValidateBatch(ctx, validObjects); err != nil {
+			validationErrors = append(validationErrors, ValidationError{
+				Tag:   "",
+				Error: err.Error(),
+			})
+		}
+	}
+
+	sendResult(Response{
+		Type:             ResponseTypeValidation,
+		ValidationErrors: validationErrors,
+	})
+
+	bw.mu.Lock()
+	bw.configs = validConfigs
+	bw.objects = validObjects
+	bw.mu.Unlock()
+
+	return nil
+}
+
+// selectByTags returns the configs and converted objects that match the requested
+// tags. If tags is empty, all stored configs are returned. It also returns a list
+// of requested tags that were not found.
+func (bw *BaseWorker) selectByTags(tags []string) ([]*core.OutboundConfig, []any, []string) {
+	bw.mu.Lock()
+	defer bw.mu.Unlock()
+
+	if len(tags) == 0 {
+		configs := make([]*core.OutboundConfig, len(bw.configs))
+		copy(configs, bw.configs)
+		objects := make([]any, len(bw.objects))
+		copy(objects, bw.objects)
+		return configs, objects, nil
+	}
+
+	configMap := make(map[string]*core.OutboundConfig, len(bw.configs))
+	objectMap := make(map[string]any, len(bw.configs))
+	for i, cfg := range bw.configs {
+		configMap[cfg.Tag] = cfg
+		objectMap[cfg.Tag] = bw.objects[i]
+	}
+
+	var matchedConfigs []*core.OutboundConfig
+	var matchedObjects []any
+	var missing []string
+
+	for _, tag := range tags {
+		if cfg, ok := configMap[tag]; ok {
+			matchedConfigs = append(matchedConfigs, cfg)
+			matchedObjects = append(matchedObjects, objectMap[tag])
+		} else {
+			missing = append(missing, tag)
+		}
+	}
+
+	return matchedConfigs, matchedObjects, missing
+}
+
+// TestLatency implements Worker.TestLatency by delegating to runTest.
+func (bw *BaseWorker) TestLatency(ctx context.Context, settings LatencyTestSettings, tags []string, sendResult func(Response)) error {
+	return bw.runTest(ctx, settings, tags, sendResult)
+}
+
+// TestSpeed implements Worker.TestSpeed by delegating to runTest.
+func (bw *BaseWorker) TestSpeed(ctx context.Context, settings SpeedTestSettings, tags []string, sendResult func(Response)) error {
+	return bw.runTest(ctx, settings, tags, sendResult)
+}
+
+// runTest orchestrates the full test lifecycle: tag filtering, instance creation
+// and startup, dialer extraction, test execution, result streaming, and
+// asynchronous instance teardown.
+func (bw *BaseWorker) runTest(ctx context.Context, settings any, tags []string, sendResult func(Response)) error {
+	configs, objects, missing := bw.selectByTags(tags)
+
+	for _, tag := range missing {
+		sendResult(Response{Type: ResponseTypeResult, Tag: tag, Error: "validation failed"})
+	}
+
+	if len(configs) == 0 {
+		return nil
+	}
+
+	inst, err := bw.adapter.CreateInstance(ctx, objects)
+	if err != nil {
+		for _, cfg := range configs {
+			sendResult(Response{Type: ResponseTypeResult, Tag: cfg.Tag, Error: err.Error()})
+		}
+		return nil
+	}
+
+	if err := bw.adapter.StartInstance(inst); err != nil {
+		bw.adapter.CloseInstance(inst)
+		return err
+	}
+
+	proxies, dialers, err := bw.adapter.ExtractDialers(inst)
+	if err != nil {
+		bw.adapter.CloseInstance(inst)
+		return err
+	}
+
+	switch s := settings.(type) {
+	case LatencyTestSettings:
+		lt, err := NewLatencyTest(ctx, s, proxies, dialers, bw.adapter.TLSProvider(ctx))
+		if err != nil {
+			bw.adapter.CloseInstance(inst)
+			return err
+		}
+		ch := make(chan LatencyTestResult, len(proxies))
+		wait := lt.Run(ch)
+		for range proxies {
+			r := <-ch
+			resp := Response{Type: ResponseTypeResult, Tag: r.Tag, LatencyMs: r.Delay}
+			if r.Error != nil {
+				resp.Error = r.Error.Error()
+			}
+			sendResult(resp)
+		}
+		wait()
+	case SpeedTestSettings:
+		st, err := NewSpeedTest(ctx, s, proxies, dialers, bw.adapter.TLSProvider(ctx))
+		if err != nil {
+			bw.adapter.CloseInstance(inst)
+			return err
+		}
+		ch := make(chan SpeedTestResult, len(proxies))
+		wait := st.Run(ch)
+		for range proxies {
+			r := <-ch
+			resp := Response{Type: ResponseTypeResult, Tag: r.Tag, Speed: r.Speed}
+			if r.Error != nil {
+				resp.Error = r.Error.Error()
+			}
+			sendResult(resp)
+		}
+		wait()
+	default:
+		bw.adapter.CloseInstance(inst)
+		return fmt.Errorf("unknown settings type: %T", settings)
+	}
+
+	go bw.adapter.CloseInstance(inst)
+	return nil
+}
+
 // Run parses --info / --run and blocks forever serving TCP requests.
 func Run(worker Worker) {
 	var infoFlag, runFlag bool
