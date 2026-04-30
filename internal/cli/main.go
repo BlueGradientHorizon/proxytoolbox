@@ -85,15 +85,18 @@ func main() {
 	configsUris = utils.NaiveDeduplicateConfigsUris(configsUris)
 	fmt.Println("after dedup:", len(configsUris))
 
+	f, _ := os.Create("parseErr.txt")
 	parsingErrorsMap := make(map[string]int)
 	for _, connUri := range configsUris {
 		p, err := parsers.ParseConfig(connUri)
 		if err != nil {
 			parsingErrorsMap[err.Error()]++
+			f.WriteString(connUri + "\n" + err.Error() + "\n")
 			continue
 		}
 		configs = append(configs, *p)
 	}
+	f.Close()
 
 	println("parsing errors:")
 	parsingErrors := 0
