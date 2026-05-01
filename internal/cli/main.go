@@ -129,12 +129,21 @@ func main() {
 		os.Exit(1)
 	}
 
-	if len(validationErrors) > 0 {
-		println("validation errors:")
-		for _, errPair := range validationErrors {
-			fmt.Printf("%s\n", errPair.Error)
-		}
+	validF, _ := os.Create("validErr.txt")
+	validationErrorsMap := make(map[string]int)
+	for _, errPair := range validationErrors {
+		validationErrorsMap[errPair.Error]++
+		validF.WriteString(errPair.Tag + "\n" + errPair.Error + "\n")
 	}
+	validF.Close()
+
+	println("validation errors:")
+	validationErrsTotal := 0
+	for err, count := range validationErrorsMap {
+		fmt.Println(count, "x", err)
+		validationErrsTotal += count
+	}
+	println("validation errors total:", validationErrsTotal)
 
 	validConfigs := make([]parsers.ProxyConfig, 0, len(taggedConfigs))
 	validTags := make([]string, 0, len(taggedConfigs))
@@ -201,7 +210,8 @@ func writeResultsToFile(sortedResults []runner.LatencyTestResult, configs []pars
 		if r.Error == nil {
 			success++
 			if uri, ok := tagToURI[r.Tag]; ok {
-				w.WriteString(uri + "\n")
+				w.WriteString(uri)
+				w.WriteString("\n")
 			} else {
 				println("result tag is missing!!! " + r.Tag)
 			}
