@@ -16,36 +16,67 @@ func (p ShadowsocksParser) ParseConfig(connURI string) (*ProxyConfig, error) {
 		return nil, errors.New("ShadowsocksParser.ParseConfig: " + err.Error())
 	}
 
+	// Handle full base64 encoded ss:// links
+	// base64Part := connURI[5:] // skip "ss://"
+	// fragment := ""
+	// if idx := strings.Index(base64Part, "#"); idx != -1 {
+	// 	fragment = base64Part[idx:]
+	// 	base64Part = base64Part[:idx]
+	// }
+
+	// base64PartUnescaped, _ := url.PathUnescape(base64Part)
+
+	// decodedBytes, decErr := base64.StdEncoding.DecodeString(base64PartUnescaped)
+	// if decErr != nil {
+	// 	decodedBytes, decErr = base64.URLEncoding.DecodeString(base64PartUnescaped)
+	// }
+	// if decErr != nil {
+	// 	decodedBytes, decErr = base64.RawURLEncoding.DecodeString(base64PartUnescaped)
+	// }
+	// if decErr != nil {
+	// 	decodedBytes, decErr = base64.RawStdEncoding.DecodeString(base64PartUnescaped)
+	// }
+
+	// if decErr == nil && strings.Contains(string(decodedBytes), "@") {
+	// 	decodedStr := string(decodedBytes)
+	// 	lastAt := strings.LastIndex(decodedStr, "@")
+	// 	user := decodedStr[:lastAt]
+	// 	hostPort := decodedStr[lastAt+1:]
+	// 	userEscaped := strings.ReplaceAll(url.PathEscape(user), "@", "%40")
+	// 	connURI = "ss://" + userEscaped + "@" + hostPort + fragment
+	// }
+
 	uri, addr, port, err := extractCommonURIData(connURI, "shadowsocks", nil)
 	if err != nil {
 		return nil, errors.New("ShadowsocksParser.ParseConfig: " + err.Error())
-	}
-
-	decodedHostBytes, err := base64.StdEncoding.DecodeString(uri.Host)
-	if err == nil {
-		decodedHost := string(decodedHostBytes)
-		uri, addr, port, err = extractCommonURIData("ss://"+decodedHost+"#"+uri.RawFragment, "shadowsocks", nil)
-		if err != nil {
-			return nil, errors.New("ShadowsocksParser.ParseConfig: " + err.Error())
-		}
 	}
 
 	params := uri.Query()
 
 	var method, password string
 
-	authPart := uri.User.String()
-	uriPassword, _ := uri.User.Password()
+	username := uri.User.Username()
+	uriPassword, hasPassword := uri.User.Password()
 
-	if !strings.Contains(authPart, ":") && uriPassword == "" {
-		userPart := uri.User.String()
-		decodedAuthBytes, err := base64.StdEncoding.DecodeString(userPart)
+	var authPart string
+	if hasPassword {
+		authPart = username + ":" + uriPassword
+	} else {
+		authPart = username
+	}
+
+	if !strings.Contains(authPart, ":") {
+		decodedAuthBytes, err := base64.StdEncoding.DecodeString(authPart)
+		if err != nil {
+			decodedAuthBytes, err = base64.URLEncoding.DecodeString(authPart)
+		}
+		if err != nil {
+			decodedAuthBytes, err = base64.RawURLEncoding.DecodeString(authPart)
+		}
 		if err == nil {
 			decodedAuth := string(decodedAuthBytes)
-			if strings.Count(decodedAuth, ":") > 0 {
+			if strings.Contains(decodedAuth, ":") {
 				method, password, _ = strings.Cut(decodedAuth, ":")
-			} else {
-				return nil, errors.New("ShadowsocksParser.ParseConfig: malformed base64 encoded user:pass tuple")
 			}
 		}
 	}
