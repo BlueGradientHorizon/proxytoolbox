@@ -9,6 +9,8 @@ import (
 )
 
 func tryFixURI(uri string) (string, error) {
+	// Don't even try to understand what the fuck is going on here, I don't know either
+
 	// Let's take an example config uri:
 	// trojan://8r<[9'l6hAO#8ZQi&==@@46.8.228.74:2053?host=Koma-YT.PAGeS.Dev&path=/trTelegram🇨🇳 @WangCai2%GG&security=tls&sni=Koma-YT.PAGeS.Dev&type=ws&note=something#%1F7410 | 🇫🇮 Finland | TROJAN | 📺 YT | TG: @YoutubeUnBlockRu
 
@@ -19,7 +21,7 @@ func tryFixURI(uri string) (string, error) {
 		return "", errors.New("empty URI")
 	}
 
-	// The string should already be trimmed by ParseConfig
+	// The string however is usually already trimmed by ParseConfig
 
 	// Fix №2: remove spaces in url (before `#`)
 
@@ -81,53 +83,47 @@ func tryFixURI(uri string) (string, error) {
 	rest := schemeSplit[1]
 
 	userSplitIndex := -1
-	authorityEnd := len(rest) // 220
+	authorityEnd := -1
 
-	// Find the end of the authority section (first / or ?)
-	// Since we haven't unescaped the URI yet, literal ? or / marks the true start of path/query
-	firstSlashOrQuestion := len(rest)
-	for i, c := range rest {
-		// For links like ss://Y2hhY2hhMjAtaWV0Zi1wb2x5MTMwNTprTEFvUFNueWdtWXJaLUI1am8zQXRrei1BY2VWaHQtZA@83.166.255.72:1080#🇷🇺 [AS47764] LLC VK #1788.%20%F0%9F%87%B7%F0%9F%87%BA%20SS%20%7C%20CIDR%3A%20VK%20%7C%20TG%3A%20%40wlrustg this won't work because there's shebang only, but if I add || c == '#' this will break parsing of trojan links like in example. What to do? I want this function to remain completely protocol-agnostic.
-		if c == '/' || c == '?' {
-			firstSlashOrQuestion = i // 37, the question mark before host=
-			break
-		}
-	}
-
-	// Find the true '@' that separates userinfo from host.
-	// We scan from right to left, but strictly before the path/query section.
-
-	// len of 8r<[9'l6hAO#8ZQi&==@@46.8.228.74:2053 is 37
-
-	// From i=36 to i=0
-	for i := firstSlashOrQuestion - 1; i >= 0; i-- {
-		if rest[i] == '@' { // The index of last @ is 20
-			// The hostport should start here and end at the first / or ? or #
-			end := firstSlashOrQuestion
-
-			// TODO: is this needed? Could shebang be before / or ?
-			for j := i + 1; j < firstSlashOrQuestion; j++ {
-				if rest[j] == '#' {
-					end = j
+	// Scan forward to find the true authority boundary.
+	// In proxy URIs, userinfo can contain '#', but the hostport segment
+	// (immediately following the separator '@') must consist of valid host characters.
+	for i := 0; i < len(rest); i++ {
+		if rest[i] == '@' {
+			// Check if the segment following this '@' is a valid hostport.
+			j := i + 1
+			for j < len(rest) {
+				c := rest[j]
+				// Valid hostport characters: alphanumeric, dots, hyphens, colons, or brackets.
+				if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
+					c == '.' || c == '-' || c == ':' || c == '[' || c == ']' {
+					j++
+				} else {
 					break
 				}
 			}
 
-			hostport := rest[i+1 : end] // 21:36 46.8.228.74:2053
+			// If the segment is non-empty, we have a candidate for the authority section.
+			if j > i+1 {
+				userSplitIndex = i
+				authorityEnd = j
 
-			// A valid hostport in proxy URIs must strictly contain valid domain/IP characters
-			for _, c := range hostport {
-				if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || c == '.' || c == ':' || c == '[' || c == ']' {
-					continue
-				} else {
-					return "", errors.New("invalid hostname")
+				// If this hostport segment is followed by a path (/), query (?),
+				// or fragment (#), the authority section is definitively over.
+				if j < len(rest) && (rest[j] == '/' || rest[j] == '?' || rest[j] == '#') {
+					break
 				}
 			}
-
-			userSplitIndex = i
-			authorityEnd = end
+		} else if rest[i] == '/' || rest[i] == '?' {
+			// If we hit the path or query start before finding any valid authority,
+			// the authority section (if any) is over.
 			break
 		}
+	}
+
+	// If no valid authority structure was found, return the URI as is.
+	if userSplitIndex == -1 {
+		return uri, nil
 	}
 
 	user := rest[:userSplitIndex] // 8r<[9'l6hAO#8Z Qi&==@
@@ -138,11 +134,11 @@ func tryFixURI(uri string) (string, error) {
 	if err == nil {
 		user = userUnescaped
 	}
-	
+
 	// Final user part escape
 	// QueryEscape is more aggressive, so using it instead of Path-
 	userEscaped := url.QueryEscape(user)
-	
+
 	// url.QueryEscape escapes spaces to + (RFC 3986) but since very weirdly crafted links could contain it in user part, we'll do it manually
 	userEscaped = strings.ReplaceAll(userEscaped, "+", "%20")
 
