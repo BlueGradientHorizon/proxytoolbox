@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/bluegradienthorizon/proxytoolbox/internal/cli/utils"
-	"github.com/bluegradienthorizon/proxytoolbox/parsers"
 	"github.com/bluegradienthorizon/proxytoolbox/presets"
 	"github.com/bluegradienthorizon/proxytoolbox/runner"
 )
@@ -17,7 +16,7 @@ type LatencyTestSettings struct {
 	Rounds      int
 }
 
-func runLatencyTest(ctx context.Context, configs []parsers.ProxyConfig, ltSettings LatencyTestSettings, testRunner *runner.TestRunner) ([]runner.LatencyTestResult, []parsers.ProxyConfig, error) {
+func runLatencyTest(ctx context.Context, tags []string, ltSettings LatencyTestSettings, testRunner *runner.TestRunner) ([]runner.LatencyTestResult, []string, error) {
 	var printerChan chan runner.LatencyTestResult
 	var printer *utils.StatsPrinter
 	var printDone chan bool
@@ -29,12 +28,6 @@ func runLatencyTest(ctx context.Context, configs []parsers.ProxyConfig, ltSettin
 			Concurrency:  ltSettings.Concurrency,
 			Timeout:      ltSettings.Timeout,
 			Rounds:       ltSettings.Rounds,
-			CoreCreatedCallback: func(validationErrors []runner.ValidationError) {
-				println("validation errors:")
-				for _, errPair := range validationErrors {
-					fmt.Printf("[%s] %s\n", errPair.Tag, errPair.Error)
-				}
-			},
 			RoundStartedCallback: func(round int, outboundsLen int) {
 				println(fmt.Sprintf("round %d/%d", round+1, ltSettings.Rounds))
 				printerChan = make(chan runner.LatencyTestResult, outboundsLen)
@@ -53,26 +46,17 @@ func runLatencyTest(ctx context.Context, configs []parsers.ProxyConfig, ltSettin
 		TestURL: presets.Google204,
 	}
 
-	testResults, err := testRunner.RunLatencyTests(ctx, configs, config)
+	testResults, err := testRunner.RunLatencyTests(ctx, tags, config)
 	if err != nil {
 		return nil, nil, fmt.Errorf("latency tests failed: %w", err)
 	}
 
-	// Filter configs to match successful results
-	configMap := make(map[string]parsers.ProxyConfig, len(configs))
-	for _, p := range configs {
-		if p.Config != nil {
-			configMap[p.Config.Tag] = p
-		}
-	}
-	validConfigs := make([]parsers.ProxyConfig, 0, len(testResults.Results))
+	validTags := make([]string, 0, len(testResults.Results))
 	for _, result := range testResults.Results {
 		if result.Error == nil {
-			if p, ok := configMap[result.Tag]; ok {
-				validConfigs = append(validConfigs, p)
-			}
+			validTags = append(validTags, result.Tag)
 		}
 	}
 
-	return testResults.Results, validConfigs, nil
+	return testResults.Results, validTags, nil
 }

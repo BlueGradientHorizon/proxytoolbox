@@ -47,11 +47,6 @@ type BaseTestRunnerSettings struct {
 	// If set to 0 or negative, all outbounds are tested concurrently.
 	Concurrency int
 
-	// CoreCreatedCallback is called after core creation with validation errors
-	// It allows initialization of progress tracking with accurate totals
-	// Optional: can be nil if not needed
-	CoreCreatedCallback func(validationErrors []ValidationError)
-
 	// RoundStartedCallback is called at the start of each test round
 	// It receives the current round number (0-indexed)
 	// Optional: can be nil if not needed
@@ -108,10 +103,6 @@ type BaseTestResults struct {
 
 	// FailureCount is the number of failed tests
 	FailureCount int
-
-	// ValidationErrors is a list of tag-error pairs for failed configurations
-	// Collected during configuration validation before testing begins
-	ValidationErrors []ValidationError
 }
 
 // LatencyTestResults contains aggregated results from latency testing.

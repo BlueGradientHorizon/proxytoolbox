@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/bluegradienthorizon/proxytoolbox/parsers"
 	"github.com/bluegradienthorizon/proxytoolbox/presets"
 	"github.com/bluegradienthorizon/proxytoolbox/runner"
 )
@@ -20,11 +19,11 @@ type SpeedTestSettings struct {
 	TargetBytes int64
 }
 
-func runSpeedTest(ctx context.Context, configs []parsers.ProxyConfig, stSettings SpeedTestSettings, testRunner *runner.TestRunner) ([]runner.SpeedTestResult, []parsers.ProxyConfig, error) {
+func runSpeedTest(ctx context.Context, tags []string, stSettings SpeedTestSettings, testRunner *runner.TestRunner) ([]runner.SpeedTestResult, []string, error) {
 	// Limit configs based on test limit
 	if stSettings.TestLimit > 0 {
-		limit := min(stSettings.TestLimit, len(configs))
-		configs = configs[:limit]
+		limit := min(stSettings.TestLimit, len(tags))
+		tags = tags[:limit]
 	}
 
 	config := runner.SpeedTestRunnerSettings{
@@ -59,10 +58,17 @@ func runSpeedTest(ctx context.Context, configs []parsers.ProxyConfig, stSettings
 		Provider:    presets.CloudflareProvider,
 	}
 
-	results, err := testRunner.RunSpeedTests(ctx, configs, config)
+	results, err := testRunner.RunSpeedTests(ctx, tags, config)
 	if err != nil {
 		return nil, nil, fmt.Errorf("speed test failed: %w", err)
 	}
 
-	return results.Results, configs, nil
+	validTags := make([]string, 0, len(results.Results))
+	for _, result := range results.Results {
+		if result.Error == nil {
+			validTags = append(validTags, result.Tag)
+		}
+	}
+
+	return results.Results, validTags, nil
 }

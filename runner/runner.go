@@ -58,8 +58,53 @@ func (tr *TestRunner) Close() error {
 	return nil
 }
 
+// Validate instantiates the core objects for the given configs and returns validation errors.
+// It does not mutate the given list but creates a copy with generated tags and returns it.
+func (tr *TestRunner) Validate(ctx context.Context, configs []parsers.ProxyConfig) ([]parsers.ProxyConfig, []ValidationError, error) {
+	configsCopy := make([]parsers.ProxyConfig, len(configs))
+	for i, c := range configs {
+		configsCopy[i] = c
+		if c.Config != nil {
+			cfgCopy := *c.Config
+			if cfgCopy.Tag == "" {
+				cfgCopy.Tag = fmt.Sprintf("outbound-%d", i)
+			}
+			configsCopy[i].Config = &cfgCopy
+		}
+	}
+
+	tr.testMu.Lock()
+	defer tr.testMu.Unlock()
+
+	proc, err := tr.ensureProc()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	var validationErrors []ValidationError
+
+	validateReq := worker.Request{
+		Type:    worker.RequestTypeValidate,
+		Configs: toRawConfigs(extractConfigs(configsCopy)),
+	}
+
+	err = proc.SendRequest(ctx, validateReq, func(r worker.Response) {
+		if r.Type == worker.ResponseTypeValidation {
+			validationErrors = r.ValidationErrors
+		}
+	})
+	if err != nil {
+		if err != ErrWorkerBusy {
+			tr.invalidateProc()
+		}
+		return nil, nil, fmt.Errorf("validation: %w", err)
+	}
+
+	return configsCopy, validationErrors, nil
+}
+
 // RunLatencyTests executes latency tests with automatic lifecycle management.
-func (tr *TestRunner) RunLatencyTests(ctx context.Context, configs []parsers.ProxyConfig, ltRunnerSettings LatencyTestRunnerSettings) (*LatencyTestResults, error) {
+func (tr *TestRunner) RunLatencyTests(ctx context.Context, tags []string, ltRunnerSettings LatencyTestRunnerSettings) (*LatencyTestResults, error) {
 	base := ltRunnerSettings.getBaseSettings()
 	var progressCb func(LatencyTestResult)
 	if base.ProgressCallback != nil {
@@ -69,16 +114,12 @@ func (tr *TestRunner) RunLatencyTests(ctx context.Context, configs []parsers.Pro
 	itr := &ipcTestRunner[LatencyTestResult, *LatencyTestRunnerSettings]{
 		tr:       tr,
 		ctx:      ctx,
-		configs:  configs,
+		tags:     tags,
 		settings: &ltRunnerSettings,
-		buildTestReq: func(currentConfigs []parsers.ProxyConfig, c *LatencyTestRunnerSettings) worker.Request {
+		buildTestReq: func(currentTags []string, c *LatencyTestRunnerSettings) worker.Request {
 			testURL := c.TestURL
 			if testURL == "" {
 				testURL = presets.Google204
-			}
-			tags := make([]string, len(currentConfigs))
-			for i, p := range currentConfigs {
-				tags[i] = p.Config.Tag
 			}
 
 			req, _ := http.NewRequest(http.MethodHead, testURL, nil)
@@ -90,7 +131,7 @@ func (tr *TestRunner) RunLatencyTests(ctx context.Context, configs []parsers.Pro
 			return worker.Request{
 				Type:     worker.RequestTypeTest,
 				TestType: worker.TestTypeLatency,
-				Tags:     tags,
+				Tags:     currentTags,
 				Settings: mustMarshal(worker.LatencyTestSettings{
 					TestURL:     testURL,
 					RawRequest:  rawReq,
@@ -109,8 +150,8 @@ func (tr *TestRunner) RunLatencyTests(ctx context.Context, configs []parsers.Pro
 		onProgress: progressCb,
 		isSuccess:  func(r LatencyTestResult) bool { return r.Error == nil && r.Delay > 0 },
 		getTag:     func(r LatencyTestResult) string { return r.Tag },
-		aggregate: func(rs []LatencyTestResult, ve []ValidationError, sort bool) any {
-			return aggregateLatencyResults(rs, ve, sort)
+		aggregate: func(rs []LatencyTestResult, sort bool) any {
+			return aggregateLatencyResults(rs, sort)
 		},
 	}
 	res, err := itr.run()
@@ -121,7 +162,7 @@ func (tr *TestRunner) RunLatencyTests(ctx context.Context, configs []parsers.Pro
 }
 
 // RunSpeedTests executes speed tests with automatic lifecycle management.
-func (tr *TestRunner) RunSpeedTests(ctx context.Context, configs []parsers.ProxyConfig, stRunnerSettings SpeedTestRunnerSettings) (*SpeedTestResults, error) {
+func (tr *TestRunner) RunSpeedTests(ctx context.Context, tags []string, stRunnerSettings SpeedTestRunnerSettings) (*SpeedTestResults, error) {
 	base := stRunnerSettings.getBaseSettings()
 	var progressCb func(SpeedTestResult)
 	if base.ProgressCallback != nil {
@@ -131,14 +172,9 @@ func (tr *TestRunner) RunSpeedTests(ctx context.Context, configs []parsers.Proxy
 	itr := &ipcTestRunner[SpeedTestResult, *SpeedTestRunnerSettings]{
 		tr:       tr,
 		ctx:      ctx,
-		configs:  configs,
+		tags:     tags,
 		settings: &stRunnerSettings,
-		buildTestReq: func(currentConfigs []parsers.ProxyConfig, c *SpeedTestRunnerSettings) worker.Request {
-			tags := make([]string, len(currentConfigs))
-			for i, p := range currentConfigs {
-				tags[i] = p.Config.Tag
-			}
-
+		buildTestReq: func(currentTags []string, c *SpeedTestRunnerSettings) worker.Request {
 			// 1. Generate the URL from provider
 			testURL := c.Provider.GetURL(c.Mode, c.TargetBytes)
 
@@ -160,7 +196,7 @@ func (tr *TestRunner) RunSpeedTests(ctx context.Context, configs []parsers.Proxy
 			return worker.Request{
 				Type:     worker.RequestTypeTest,
 				TestType: worker.TestTypeSpeed,
-				Tags:     tags,
+				Tags:     currentTags,
 				Settings: mustMarshal(worker.SpeedTestSettings{
 					Mode:        c.Mode,
 					Timeout:     c.Timeout,
@@ -181,8 +217,8 @@ func (tr *TestRunner) RunSpeedTests(ctx context.Context, configs []parsers.Proxy
 		onProgress: progressCb,
 		isSuccess:  func(r SpeedTestResult) bool { return r.Error == nil && r.Speed > 0 },
 		getTag:     func(r SpeedTestResult) string { return r.Tag },
-		aggregate: func(rs []SpeedTestResult, ve []ValidationError, sort bool) any {
-			return aggregateSpeedResults(rs, ve, sort)
+		aggregate: func(rs []SpeedTestResult, sort bool) any {
+			return aggregateSpeedResults(rs, sort)
 		},
 	}
 	res, err := itr.run()
@@ -195,22 +231,18 @@ func (tr *TestRunner) RunSpeedTests(ctx context.Context, configs []parsers.Proxy
 type ipcTestRunner[TResult any, TSettings testSettings] struct {
 	tr           *TestRunner
 	ctx          context.Context
-	configs      []parsers.ProxyConfig
+	tags         []string
 	settings     TSettings
-	buildTestReq func([]parsers.ProxyConfig, TSettings) worker.Request
+	buildTestReq func([]string, TSettings) worker.Request
 	convert      func(worker.Response) TResult
 	onProgress   func(TResult)
 	isSuccess    func(TResult) bool
 	getTag       func(TResult) string
-	aggregate    func([]TResult, []ValidationError, bool) any
+	aggregate    func([]TResult, bool) any
 }
 
 func (itr *ipcTestRunner[TResult, TSettings]) run() (any, error) {
 	base := itr.settings.getBaseSettings()
-
-	for i := range itr.configs {
-		itr.configs[i].Config.Tag = fmt.Sprintf("outbound-%d", i)
-	}
 
 	itr.tr.testMu.Lock()
 	defer itr.tr.testMu.Unlock()
@@ -220,30 +252,7 @@ func (itr *ipcTestRunner[TResult, TSettings]) run() (any, error) {
 		return nil, err
 	}
 
-	// --- Validation phase ---
-	var validationErrors []ValidationError
-
-	validateReq := worker.Request{
-		Type:    worker.RequestTypeValidate,
-		Configs: toRawConfigs(extractConfigs(itr.configs)),
-	}
-
-	err = proc.SendRequest(itr.ctx, validateReq, func(r worker.Response) {
-		if r.Type == worker.ResponseTypeValidation {
-			validationErrors = r.ValidationErrors
-			if base.CoreCreatedCallback != nil {
-				base.CoreCreatedCallback(validationErrors)
-			}
-		}
-	})
-	if err != nil {
-		if err != ErrWorkerBusy {
-			itr.tr.invalidateProc()
-		}
-		return nil, fmt.Errorf("validation: %w", err)
-	}
-
-	currentConfigs := itr.configs
+	currentTags := itr.tags
 
 	// --- Test phase ---
 	var final []TResult
@@ -251,15 +260,15 @@ func (itr *ipcTestRunner[TResult, TSettings]) run() (any, error) {
 	for round := 0; round < base.Rounds; round++ {
 		select {
 		case <-itr.ctx.Done():
-			return itr.aggregate(final, validationErrors, base.SortResults), itr.ctx.Err()
+			return itr.aggregate(final, base.SortResults), itr.ctx.Err()
 		default:
 		}
 
 		if base.RoundStartedCallback != nil {
-			base.RoundStartedCallback(round, len(currentConfigs))
+			base.RoundStartedCallback(round, len(currentTags))
 		}
 
-		req := itr.buildTestReq(currentConfigs, itr.settings)
+		req := itr.buildTestReq(currentTags, itr.settings)
 		var roundResults []TResult
 
 		err = proc.SendRequest(itr.ctx, req, func(r worker.Response) {
@@ -296,15 +305,15 @@ func (itr *ipcTestRunner[TResult, TSettings]) run() (any, error) {
 			if len(good) == 0 {
 				break
 			}
-			next := make([]parsers.ProxyConfig, 0, len(good))
-			for _, p := range currentConfigs {
-				if good[p.Config.Tag] {
-					next = append(next, p)
+			next := make([]string, 0, len(good))
+			for _, tag := range currentTags {
+				if good[tag] {
+					next = append(next, tag)
 				}
 			}
-			currentConfigs = next
+			currentTags = next
 		}
 	}
 
-	return itr.aggregate(final, validationErrors, base.SortResults), nil
+	return itr.aggregate(final, base.SortResults), nil
 }

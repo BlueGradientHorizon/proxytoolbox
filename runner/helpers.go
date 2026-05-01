@@ -68,7 +68,7 @@ func sortTestResults[T any](results []T, isSuccess func(T) bool, shouldSwap func
 	}
 }
 
-func aggregateLatencyResults(results []LatencyTestResult, validationErrors []ValidationError, sortResults bool) *LatencyTestResults {
+func aggregateLatencyResults(results []LatencyTestResult, sortResults bool) *LatencyTestResults {
 	successCount := 0
 	failureCount := 0
 	for _, r := range results {
@@ -86,13 +86,12 @@ func aggregateLatencyResults(results []LatencyTestResult, validationErrors []Val
 	return &LatencyTestResults{
 		BaseTestResults: BaseTestResults{
 			SuccessCount: successCount, FailureCount: failureCount,
-			ValidationErrors: validationErrors,
 		},
 		Results: results,
 	}
 }
 
-func aggregateSpeedResults(results []SpeedTestResult, validationErrors []ValidationError, sortResults bool) *SpeedTestResults {
+func aggregateSpeedResults(results []SpeedTestResult, sortResults bool) *SpeedTestResults {
 	successCount := 0
 	failureCount := 0
 	for _, r := range results {
@@ -110,7 +109,6 @@ func aggregateSpeedResults(results []SpeedTestResult, validationErrors []Validat
 	return &SpeedTestResults{
 		BaseTestResults: BaseTestResults{
 			SuccessCount: successCount, FailureCount: failureCount,
-			ValidationErrors: validationErrors,
 		},
 		Results: results,
 	}

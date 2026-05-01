@@ -113,7 +113,7 @@ func main() {
 
 	ctx := context.Background()
 
-	runner, err := runner.NewTestRunner(runner.RunnerSettings{
+	testRunner, err := runner.NewTestRunner(runner.RunnerSettings{
 		WorkerPath:  workerPath,
 		WorkerDebug: workerDebug,
 	})
@@ -121,9 +121,40 @@ func main() {
 		fmt.Printf("Failed to create test runner: %v\n", err)
 		os.Exit(1)
 	}
-	defer runner.Close()
+	defer testRunner.Close()
 
-	latencyResults, taggedConfigs, ltErr := runLatencyTest(ctx, configs, ltSettings, runner)
+	taggedConfigs, validationErrors, err := testRunner.Validate(ctx, configs)
+	if err != nil {
+		fmt.Printf("Validation error: %v\n", err)
+		os.Exit(1)
+	}
+
+	if len(validationErrors) > 0 {
+		println("validation errors:")
+		for _, errPair := range validationErrors {
+			fmt.Printf("%s\n", errPair.Error)
+		}
+	}
+
+	validConfigs := make([]parsers.ProxyConfig, 0, len(taggedConfigs))
+	validTags := make([]string, 0, len(taggedConfigs))
+	errMap := make(map[string]bool)
+	for _, ve := range validationErrors {
+		errMap[ve.Tag] = true
+	}
+	for _, c := range taggedConfigs {
+		if c.Config != nil && !errMap[c.Config.Tag] {
+			validConfigs = append(validConfigs, c)
+			validTags = append(validTags, c.Config.Tag)
+		}
+	}
+
+	if len(validTags) == 0 {
+		fmt.Println("No valid configurations after validation.")
+		return
+	}
+
+	latencyResults, successfulTags, ltErr := runLatencyTest(ctx, validTags, ltSettings, testRunner)
 	if ltErr != nil {
 		fmt.Printf("Latency test error: %v\n", ltErr)
 		os.Exit(1)
@@ -135,12 +166,12 @@ func main() {
 	}
 
 	// Write results to file
-	writeResultsToFile(latencyResults, taggedConfigs)
+	writeResultsToFile(latencyResults, validConfigs)
 
 	// Run speed tests if enabled
 	if runSpeedTestFlag {
 		var speedErr error
-		_, taggedConfigs, speedErr = runSpeedTest(ctx, taggedConfigs, stSettings, runner)
+		_, _, speedErr = runSpeedTest(ctx, successfulTags, stSettings, testRunner)
 		if speedErr != nil {
 			fmt.Printf("Speed test error: %v\n", speedErr)
 		}
