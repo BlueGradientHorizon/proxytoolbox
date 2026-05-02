@@ -23,7 +23,7 @@ func runSpeedTest(ctx context.Context, tags []string, stSettings SpeedTestSettin
 	// Limit configs based on test limit
 	if stSettings.TestLimit > 0 {
 		limit := min(stSettings.TestLimit, len(tags))
-		tags = tags[:limit]
+		tags = append([]string(nil), tags[:limit]...)
 	}
 
 	config := runner.SpeedTestRunnerSettings{

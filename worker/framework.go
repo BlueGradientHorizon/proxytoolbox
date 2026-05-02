@@ -12,6 +12,7 @@ import (
 	"os/signal"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/bluegradienthorizon/proxytoolbox/core"
 )
@@ -240,7 +241,13 @@ func (bw *BaseWorker) runTest(ctx context.Context, settings any, tags []string, 
 		return fmt.Errorf("unknown settings type: %T", settings)
 	}
 
-	go bw.adapter.CloseInstance(inst)
+	// Closing an instance could take up to an astronomical 5 seconds when 7k+ configs loaded
+	// So intentionally close it asynchronously so the "done" response isn't delayed.
+	go func() {
+		start := time.Now()
+		bw.adapter.CloseInstance(inst)
+		fmt.Printf("instance.Close() took %v\n", time.Since(start))
+	}()
 	return nil
 }
 
@@ -316,10 +323,8 @@ func handle(conn net.Conn, worker Worker) {
 		// even while a long-running test is in progress.
 		go func(req Request) {
 			if !sw.TryLock() {
-				sw.Lock()
 				sw.Write(Response{Type: ResponseTypeBusy})
 				sw.Write(Response{Type: ResponseTypeDone})
-				sw.Unlock()
 				return
 			}
 			defer sw.Unlock()
@@ -327,7 +332,14 @@ func handle(conn net.Conn, worker Worker) {
 			var err error
 			switch req.Type {
 			case RequestTypeValidate:
-				err = worker.Validate(ctx, toCoreConfigs(req.Configs), sw.Write)
+				configs, deserializeErrs := toCoreConfigs(req.Configs)
+				sendResultWrapped := func(r Response) {
+					if r.Type == ResponseTypeValidation {
+						r.ValidationErrors = append(deserializeErrs, r.ValidationErrors...)
+					}
+					sw.Write(r)
+				}
+				err = worker.Validate(ctx, configs, sendResultWrapped)
 			case RequestTypeTest:
 				switch req.TestType {
 				case TestTypeLatency:
@@ -381,14 +393,19 @@ func (sw *sessionWriter) Unlock() {
 	sw.sessionMu.Unlock()
 }
 
-func toCoreConfigs(raw []*RawConfig) []*core.OutboundConfig {
+func toCoreConfigs(raw []*RawConfig) ([]*core.OutboundConfig, []ValidationError) {
 	out := make([]*core.OutboundConfig, 0, len(raw))
+	var errs []ValidationError
 	for _, rc := range raw {
 		cfg, err := rc.ToCore()
 		if err != nil {
+			errs = append(errs, ValidationError{
+				Tag:   rc.Tag,
+				Error: "deserialize: " + err.Error(),
+			})
 			continue
 		}
 		out = append(out, cfg)
 	}
-	return out
+	return out, errs
 }

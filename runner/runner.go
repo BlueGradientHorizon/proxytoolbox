@@ -108,7 +108,11 @@ func (tr *TestRunner) RunLatencyTests(ctx context.Context, tags []string, ltRunn
 	base := ltRunnerSettings.getBaseSettings()
 	var progressCb func(LatencyTestResult)
 	if base.ProgressCallback != nil {
-		progressCb, _ = base.ProgressCallback.(func(LatencyTestResult))
+		var ok bool
+		progressCb, ok = base.ProgressCallback.(func(LatencyTestResult))
+		if !ok {
+			return nil, fmt.Errorf("invalid ProgressCallback type: expected func(LatencyTestResult)")
+		}
 	}
 
 	itr := &ipcTestRunner[LatencyTestResult, *LatencyTestRunnerSettings]{
@@ -128,16 +132,21 @@ func (tr *TestRunner) RunLatencyTests(ctx context.Context, tags []string, ltRunn
 			}
 			rawReq, _ := httputil.DumpRequest(req, false)
 
+			s, err := mustMarshal(worker.LatencyTestSettings{
+				TestURL:     testURL,
+				RawRequest:  rawReq,
+				Timeout:     c.Timeout,
+				Concurrency: base.Concurrency,
+			})
+			if err != nil {
+				panic(fmt.Sprintf("marshal latency settings: %v", err))
+			}
+
 			return worker.Request{
 				Type:     worker.RequestTypeTest,
 				TestType: worker.TestTypeLatency,
 				Tags:     currentTags,
-				Settings: mustMarshal(worker.LatencyTestSettings{
-					TestURL:     testURL,
-					RawRequest:  rawReq,
-					Timeout:     c.Timeout,
-					Concurrency: base.Concurrency,
-				}),
+				Settings: s,
 			}
 		},
 		convert: func(r worker.Response) LatencyTestResult {
@@ -148,7 +157,7 @@ func (tr *TestRunner) RunLatencyTests(ctx context.Context, tags []string, ltRunn
 			return LatencyTestResult{Tag: r.Tag, Delay: r.LatencyMs, Error: err}
 		},
 		onProgress: progressCb,
-		isSuccess:  func(r LatencyTestResult) bool { return r.Error == nil && r.Delay > 0 },
+		isSuccess:  func(r LatencyTestResult) bool { return r.Error == nil },
 		getTag:     func(r LatencyTestResult) string { return r.Tag },
 		aggregate: func(rs []LatencyTestResult, sort bool) any {
 			return aggregateLatencyResults(rs, sort)
@@ -166,7 +175,11 @@ func (tr *TestRunner) RunSpeedTests(ctx context.Context, tags []string, stRunner
 	base := stRunnerSettings.getBaseSettings()
 	var progressCb func(SpeedTestResult)
 	if base.ProgressCallback != nil {
-		progressCb, _ = base.ProgressCallback.(func(SpeedTestResult))
+		var ok bool
+		progressCb, ok = base.ProgressCallback.(func(SpeedTestResult))
+		if !ok {
+			return nil, fmt.Errorf("invalid ProgressCallback type: expected func(SpeedTestResult)")
+		}
 	}
 
 	itr := &ipcTestRunner[SpeedTestResult, *SpeedTestRunnerSettings]{
@@ -193,18 +206,23 @@ func (tr *TestRunner) RunSpeedTests(ctx context.Context, tags []string, stRunner
 			// 3. Serialize the request to wire format (excluding body)
 			rawReq, _ := httputil.DumpRequest(req, false)
 
+			s, err := mustMarshal(worker.SpeedTestSettings{
+				Mode:        c.Mode,
+				Timeout:     c.Timeout,
+				TargetBytes: c.TargetBytes,
+				Concurrency: base.Concurrency,
+				TestURL:     testURL,
+				RawRequest:  rawReq,
+			})
+			if err != nil {
+				panic(fmt.Sprintf("marshal speed settings: %v", err))
+			}
+
 			return worker.Request{
 				Type:     worker.RequestTypeTest,
 				TestType: worker.TestTypeSpeed,
 				Tags:     currentTags,
-				Settings: mustMarshal(worker.SpeedTestSettings{
-					Mode:        c.Mode,
-					Timeout:     c.Timeout,
-					TargetBytes: c.TargetBytes,
-					Concurrency: base.Concurrency,
-					TestURL:     testURL,
-					RawRequest:  rawReq,
-				}),
+				Settings: s,
 			}
 		},
 		convert: func(r worker.Response) SpeedTestResult {
@@ -215,7 +233,7 @@ func (tr *TestRunner) RunSpeedTests(ctx context.Context, tags []string, stRunner
 			return SpeedTestResult{Tag: r.Tag, Speed: r.Speed, Error: err}
 		},
 		onProgress: progressCb,
-		isSuccess:  func(r SpeedTestResult) bool { return r.Error == nil && r.Speed > 0 },
+		isSuccess:  func(r SpeedTestResult) bool { return r.Error == nil },
 		getTag:     func(r SpeedTestResult) string { return r.Tag },
 		aggregate: func(rs []SpeedTestResult, sort bool) any {
 			return aggregateSpeedResults(rs, sort)

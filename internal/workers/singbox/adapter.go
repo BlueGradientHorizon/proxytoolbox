@@ -217,6 +217,11 @@ func (a *Adapter) convertTransport(config *core.TransportConfig) (*option.V2RayT
 			transport.WebsocketOptions = option.V2RayWebsocketOptions{
 				Path: config.WebSocket.Path,
 			}
+			if config.WebSocket.Host != "" {
+				transport.WebsocketOptions.Headers = badoption.HTTPHeader{
+					"Host": badoption.Listable[string]{config.WebSocket.Host},
+				}
+			}
 		}
 	case "quic":
 		transport.Type = C.V2RayTransportTypeQUIC

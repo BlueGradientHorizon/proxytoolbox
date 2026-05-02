@@ -2,6 +2,7 @@ package runner
 
 import (
 	"encoding/json"
+	"sort"
 
 	"github.com/bluegradienthorizon/proxytoolbox/core"
 	"github.com/bluegradienthorizon/proxytoolbox/parsers"
@@ -30,9 +31,12 @@ func toRawConfigs(configs []*core.OutboundConfig) []*worker.RawConfig {
 	return out
 }
 
-func mustMarshal(v interface{}) json.RawMessage {
-	b, _ := json.Marshal(v)
-	return json.RawMessage(b)
+func mustMarshal(v interface{}) (json.RawMessage, error) {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return nil, err
+	}
+	return json.RawMessage(b), nil
 }
 
 type testSettings interface {
@@ -51,28 +55,21 @@ func sortTestResults[T any](results []T, isSuccess func(T) bool, shouldSwap func
 	if len(results) == 0 {
 		return
 	}
-	for i := 0; i < len(results)-1; i++ {
-		for j := 0; j < len(results)-i-1; j++ {
-			r1 := results[j]
-			r2 := results[j+1]
-			s1 := isSuccess(r1)
-			s2 := isSuccess(r2)
-			if s1 && s2 {
-				if shouldSwap(r1, r2) {
-					results[j], results[j+1] = results[j+1], results[j]
-				}
-			} else if !s1 && s2 {
-				results[j], results[j+1] = results[j+1], results[j]
-			}
+	sort.Slice(results, func(i, j int) bool {
+		s1 := isSuccess(results[i])
+		s2 := isSuccess(results[j])
+		if s1 && s2 {
+			return shouldSwap(results[j], results[i])
 		}
-	}
+		return s1 && !s2
+	})
 }
 
 func aggregateLatencyResults(results []LatencyTestResult, sortResults bool) *LatencyTestResults {
 	successCount := 0
 	failureCount := 0
 	for _, r := range results {
-		if r.Error == nil && r.Delay > 0 {
+		if r.Error == nil {
 			successCount++
 		} else {
 			failureCount++
@@ -80,7 +77,7 @@ func aggregateLatencyResults(results []LatencyTestResult, sortResults bool) *Lat
 	}
 	if sortResults {
 		sortTestResults(results,
-			func(r LatencyTestResult) bool { return r.Delay > 0 },
+			func(r LatencyTestResult) bool { return r.Error == nil },
 			func(r1, r2 LatencyTestResult) bool { return r1.Delay > r2.Delay })
 	}
 	return &LatencyTestResults{
@@ -95,7 +92,7 @@ func aggregateSpeedResults(results []SpeedTestResult, sortResults bool) *SpeedTe
 	successCount := 0
 	failureCount := 0
 	for _, r := range results {
-		if r.Error == nil && r.Speed > 0 {
+		if r.Error == nil {
 			successCount++
 		} else {
 			failureCount++
@@ -103,7 +100,7 @@ func aggregateSpeedResults(results []SpeedTestResult, sortResults bool) *SpeedTe
 	}
 	if sortResults {
 		sortTestResults(results,
-			func(r SpeedTestResult) bool { return r.Speed > 0 },
+			func(r SpeedTestResult) bool { return r.Error == nil },
 			func(r1, r2 SpeedTestResult) bool { return r1.Speed < r2.Speed })
 	}
 	return &SpeedTestResults{

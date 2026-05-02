@@ -39,10 +39,6 @@ func (tp *WorkerProcess) Start() error {
 	}
 	stderr, _ := tp.cmd.StderrPipe()
 
-	if !tp.debug {
-		go func() { io.Copy(io.Discard, stderr) }()
-	}
-
 	if err := tp.cmd.Start(); err != nil {
 		return err
 	}
@@ -68,6 +64,9 @@ func (tp *WorkerProcess) Start() error {
 	if tp.debug {
 		go func() { io.Copy(os.Stdout, rd) }()
 		go func() { io.Copy(os.Stderr, stderr) }()
+	} else {
+		go func() { io.Copy(io.Discard, rd) }()
+		go func() { io.Copy(io.Discard, stderr) }()
 	}
 
 	d := net.Dialer{Timeout: 5 * time.Second}
@@ -99,30 +98,47 @@ func (tp *WorkerProcess) SendRequest(ctx context.Context, req worker.Request, on
 			return ctx.Err()
 		default:
 		}
-		var r worker.Response
-		if err := tp.dec.Decode(&r); err != nil {
-			if ctx.Err() != nil {
-				return ctx.Err()
-			}
-			return fmt.Errorf("decode error: %w", err)
+
+		type decodeResult struct {
+			r   worker.Response
+			err error
 		}
-		switch r.Type {
-		case worker.ResponseTypeDone:
-			if testErr != nil {
-				return testErr
+		ch := make(chan decodeResult, 1)
+		go func() {
+			var r worker.Response
+			err := tp.dec.Decode(&r)
+			ch <- decodeResult{r, err}
+		}()
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case res := <-ch:
+			r := res.r
+			if res.err != nil {
+				if ctx.Err() != nil {
+					return ctx.Err()
+				}
+				return fmt.Errorf("decode error: %w", res.err)
 			}
-			return nil
-		case worker.ResponseTypeError:
-			// Do not return immediately; keep reading until "done"
-			// so the next round does not read leftover messages.
-			testErr = fmt.Errorf("tester error: %s", r.Error)
-		case worker.ResponseTypeBusy:
-			// Do not return immediately; keep reading until "done"
-			// so the next round does not read leftover messages.
-			testErr = ErrWorkerBusy
-		default:
-			if onResponse != nil {
-				onResponse(r)
+			switch r.Type {
+			case worker.ResponseTypeDone:
+				if testErr != nil {
+					return testErr
+				}
+				return nil
+			case worker.ResponseTypeError:
+				// Do not return immediately; keep reading until "done"
+				// so the next round does not read leftover messages.
+				testErr = fmt.Errorf("tester error: %s", r.Error)
+			case worker.ResponseTypeBusy:
+				// Do not return immediately; keep reading until "done"
+				// so the next round does not read leftover messages.
+				testErr = ErrWorkerBusy
+			default:
+				if onResponse != nil {
+					onResponse(r)
+				}
 			}
 		}
 	}

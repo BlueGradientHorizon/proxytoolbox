@@ -14,7 +14,7 @@ worker-singbox:
 	cd internal/workers/singbox && make
 
 run: build
-	./bin/cli$(EXT)
+	./bin/cli$(EXT) --worker-debug
 
 clean:
 ifeq ($(OS),Windows_NT)

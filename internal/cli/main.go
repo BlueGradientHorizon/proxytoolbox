@@ -78,6 +78,10 @@ func main() {
 
 	content := strings.TrimSpace(string(data))
 	for line := range strings.SplitSeq(content, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
 		configsUris = append(configsUris, line)
 	}
 
@@ -85,18 +89,22 @@ func main() {
 	configsUris = utils.NaiveDeduplicateConfigsUris(configsUris)
 	fmt.Println("after dedup:", len(configsUris))
 
-	f, _ := os.Create("parseErr.txt")
+	parseF, err := os.Create("parseErr.txt")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to create parseErr.txt: %v\n", err)
+		os.Exit(1)
+	}
 	parsingErrorsMap := make(map[string]int)
 	for _, connUri := range configsUris {
 		p, err := parsers.ParseConfig(connUri)
 		if err != nil {
 			parsingErrorsMap[err.Error()]++
-			f.WriteString(connUri + "\n" + err.Error() + "\n")
+			parseF.WriteString(connUri + "\n" + err.Error() + "\n")
 			continue
 		}
 		configs = append(configs, *p)
 	}
-	f.Close()
+	parseF.Close()
 
 	println("parsing errors:")
 	parsingErrors := 0
@@ -129,7 +137,11 @@ func main() {
 		os.Exit(1)
 	}
 
-	validF, _ := os.Create("validErr.txt")
+	validF, err := os.Create("validErr.txt")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to create validErr.txt: %v\n", err)
+		os.Exit(1)
+	}
 	validationErrorsMap := make(map[string]int)
 	for _, errPair := range validationErrors {
 		validationErrorsMap[errPair.Error]++
@@ -175,7 +187,9 @@ func main() {
 	}
 
 	// Write results to file
-	writeResultsToFile(latencyResults, validConfigs)
+	if err := writeResultsToFile(latencyResults, validConfigs); err != nil {
+		fmt.Fprintf(os.Stderr, "%v\n", err)
+	}
 
 	// Run speed tests if enabled
 	if runSpeedTestFlag {
@@ -190,12 +204,11 @@ func main() {
 }
 
 // Writes successful latency test results to out.txt
-func writeResultsToFile(sortedResults []runner.LatencyTestResult, configs []parsers.ProxyConfig) {
+func writeResultsToFile(sortedResults []runner.LatencyTestResult, configs []parsers.ProxyConfig) error {
 	success := 0
 	f, err := os.Create("out.txt")
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to create output: %v\n", err)
-		return
+		return fmt.Errorf("failed to create output: %w", err)
 	}
 	defer f.Close()
 	w := bufio.NewWriter(f)
@@ -217,7 +230,10 @@ func writeResultsToFile(sortedResults []runner.LatencyTestResult, configs []pars
 			}
 		}
 	}
-	w.Flush()
+	if err := w.Flush(); err != nil {
+		return fmt.Errorf("failed to flush output: %w", err)
+	}
 
 	fmt.Printf("success %d\n", success)
+	return nil
 }

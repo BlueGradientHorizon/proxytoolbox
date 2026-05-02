@@ -40,11 +40,7 @@ func runParallel[R any](
 		go func(index int) {
 			defer wg.Done()
 
-			select {
-			case sem <- struct{}{}:
-			case <-ctx.Done():
-				return
-			}
+			sem <- struct{}{}
 			defer func() { <-sem }()
 
 			testCtx, cancel := context.WithTimeout(ctx, timeout)
@@ -52,16 +48,10 @@ func runParallel[R any](
 
 			res := testFunc(testCtx, index)
 
-			// Send to all channels, but handle closed channels gracefully
+			// Send to all channels
 			for _, c := range resChans {
 				if c != nil {
-					select {
-					case c <- res:
-						// Successfully sent
-					case <-ctx.Done():
-						// Context cancelled, stop sending
-						return
-					}
+					c <- res
 				}
 			}
 		}(i)
