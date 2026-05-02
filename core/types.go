@@ -93,6 +93,49 @@ type Hysteria2Settings struct {
 // Protocol returns "hysteria2"
 func (h Hysteria2Settings) Protocol() string { return "hysteria2" }
 
+// WireguardSettings contains Wireguard-specific configuration
+type WireguardSettings struct {
+	SecretKey string
+	Address   []string
+	Peers     []WireguardPeer
+}
+
+// Protocol returns "wireguard"
+func (w WireguardSettings) Protocol() string { return "wireguard" }
+
+// WireguardPeer represents a peer in Wireguard configuration
+type WireguardPeer struct {
+	PublicKey string
+	Endpoint  string
+}
+
+// SocksSettings contains Socks-specific configuration
+type SocksSettings struct {
+	Version string
+	User    string
+	Pass    string
+}
+
+// Protocol returns "socks"
+func (s SocksSettings) Protocol() string { return "socks" }
+
+// HTTPSettings contains HTTP-specific configuration
+type HTTPSettings struct {
+	User string
+	Pass string
+}
+
+// Protocol returns "http"
+func (h HTTPSettings) Protocol() string { return "http" }
+
+// VLiteSettings contains VLite-specific configuration
+type VLiteSettings struct {
+	Password string
+}
+
+// Protocol returns "vlite"
+func (v VLiteSettings) Protocol() string { return "vlite" }
+
 // TLSConfig represents generic TLS configuration including Reality and ECH
 type TLSConfig struct {
 	// Enabled indicates whether TLS is enabled
@@ -152,6 +195,15 @@ type TransportConfig struct {
 
 	// HTTPUpgrade contains HTTP Upgrade transport configuration (optional)
 	HTTPUpgrade *HTTPUpgradeConfig
+
+	// XHTTP contains XHTTP transport configuration (optional)
+	XHTTP *XHTTPConfig
+
+	// SplitHTTP contains SplitHTTP transport configuration (optional)
+	SplitHTTP *SplitHTTPConfig
+
+	// KCP contains mKCP transport configuration (optional)
+	KCP *KCPConfig
 }
 
 // HTTPConfig represents HTTP/2 transport configuration
@@ -193,6 +245,25 @@ type HTTPUpgradeConfig struct {
 
 	// Path is the HTTP path
 	Path string
+}
+
+// XHTTPConfig represents XHTTP transport configuration
+type XHTTPConfig struct {
+	Host  string
+	Path  string
+	Mode  string
+	Extra map[string]string
+}
+
+// SplitHTTPConfig represents SplitHTTP transport configuration
+type SplitHTTPConfig struct {
+	Host string
+	Path string
+}
+
+// KCPConfig represents mKCP transport configuration
+type KCPConfig struct {
+	Seed string
 }
 
 // ObfsConfig represents obfuscation configuration for protocols like Hysteria2

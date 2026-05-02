@@ -1,17 +1,20 @@
-.PHONY: build cli worker-singbox clean
+.PHONY: build cli worker-singbox worker-xraycore clean
 
 EXT :=
 ifeq ($(OS),Windows_NT)
 EXT := .exe
 endif
 
-build: cli worker-singbox
+build: cli worker-singbox worker-xraycore
 
 cli:
 	cd internal/cli && make
 
 worker-singbox:
 	cd internal/workers/singbox && make
+
+worker-xraycore:
+	cd internal/workers/xraycore && make
 
 run: build
 	./bin/cli$(EXT) --worker-debug

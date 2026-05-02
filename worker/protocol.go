@@ -114,6 +114,30 @@ func (rc *RawConfig) ToCore() (*core.OutboundConfig, error) {
 			return nil, err
 		}
 		cfg.Settings = s
+	case "wireguard", "wg":
+		var s core.WireguardSettings
+		if err := json.Unmarshal(rc.Settings, &s); err != nil {
+			return nil, err
+		}
+		cfg.Settings = s
+	case "socks":
+		var s core.SocksSettings
+		if err := json.Unmarshal(rc.Settings, &s); err != nil {
+			return nil, err
+		}
+		cfg.Settings = s
+	case "http":
+		var s core.HTTPSettings
+		if err := json.Unmarshal(rc.Settings, &s); err != nil {
+			return nil, err
+		}
+		cfg.Settings = s
+	case "vlite":
+		var s core.VLiteSettings
+		if err := json.Unmarshal(rc.Settings, &s); err != nil {
+			return nil, err
+		}
+		cfg.Settings = s
 	default:
 		return nil, fmt.Errorf("unknown type %s", rc.Type)
 	}
