@@ -72,6 +72,7 @@ func (a *Adapter) ConvertOutbound(config *core.OutboundConfig) (any, error) {
 			"address": config.Server,
 			"port":    config.Port,
 			"auth":    s.Password,
+			"version": 2,
 		}
 		settingsJSON, _ := json.Marshal(settings)
 		outboundConf.Settings = (*json.RawMessage)(&settingsJSON)
