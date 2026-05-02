@@ -22,12 +22,12 @@ var ErrWorkerBusy = errors.New("worker is busy")
 
 // WorkerProcess wraps a single worker binary invocation.
 type WorkerProcess struct {
-	path  string
-	debug bool
-	cmd   *exec.Cmd
-	conn  net.Conn
-	dec   *json.Decoder
-	bw    *bufio.Writer
+	path    string
+	logPath string
+	cmd     *exec.Cmd
+	conn    net.Conn
+	dec     *json.Decoder
+	bw      *bufio.Writer
 }
 
 // Start executes the worker with --run, reads the TCP port from stdout, and connects.
@@ -61,9 +61,25 @@ func (tp *WorkerProcess) Start() error {
 		return fmt.Errorf("invalid port: %w", err)
 	}
 
-	if tp.debug {
-		go func() { io.Copy(os.Stdout, rd) }()
-		go func() { io.Copy(os.Stderr, stderr) }()
+	if tp.logPath != "" {
+		logFile, err := os.Create(tp.logPath)
+		if err != nil {
+			tp.kill()
+			return fmt.Errorf("cannot create log file: %w", err)
+		}
+		logFunc := func(r io.Reader, pipeName string) {
+			scanner := bufio.NewScanner(r)
+			for scanner.Scan() {
+				fmt.Fprintln(logFile, scanner.Text())
+				logFile.Sync()
+			}
+			if err := scanner.Err(); err != nil {
+				fmt.Fprintf(logFile, "%s scanner error: %v\n", pipeName, err)
+				logFile.Sync()
+			}
+		}
+		go logFunc(rd, "stdout")
+		go logFunc(stderr, "stderr")
 	} else {
 		go func() { io.Copy(io.Discard, rd) }()
 		go func() { io.Copy(io.Discard, stderr) }()

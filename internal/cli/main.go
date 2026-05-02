@@ -20,6 +20,16 @@ func main() {
 	flag.BoolVar(&workerDebug, "worker-debug", false, "Print worker stdout and stderr")
 	flag.Parse()
 
+	// File name constants
+	const (
+		inputFile     = "link_list.txt"
+		outputFile    = "configs.txt"
+		parseErrFile  = "parseErr.txt"
+		validErrFile  = "validErr.txt"
+		resultsFile   = "out.txt"
+		workerLogFile = "worker.log"
+	)
+
 	// Configure latency test parameters
 	var ltSettings = LatencyTestSettings{
 		Concurrency: 0,
@@ -61,9 +71,30 @@ func main() {
 		}
 	}
 
-	inputFile := "link_list.txt"
-	outputFile := "configs.txt"
-	utils.DownloadConfigs(inputFile, outputFile, 10*time.Second)
+	// Handle config download with user prompt
+	var overwrite bool
+	if _, err := os.Stat(outputFile); err == nil {
+		fmt.Printf("Output file '%s' exists. Redownload? y/n: ", outputFile)
+		reader := bufio.NewReader(os.Stdin)
+		ans, _ := reader.ReadString('\n')
+		ans = strings.ToLower(strings.TrimSpace(ans))
+
+		if ans == "" {
+			fmt.Println("Assume no.")
+		} else if strings.HasPrefix(ans, "y") {
+			overwrite = true
+		}
+	} else {
+		overwrite = true
+	}
+
+	if overwrite {
+		if err := utils.DownloadConfigs(inputFile, outputFile, 10*time.Second/*, true*/); err != nil {
+			fmt.Printf("Error downloading configs: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("Configurations saved to: %s\n", outputFile)
+	}
 
 	fmt.Printf("Attempting to load configurations from file: %s\n", outputFile)
 
@@ -89,9 +120,9 @@ func main() {
 	configsUris = utils.NaiveDeduplicateConfigsUris(configsUris)
 	fmt.Println("after dedup:", len(configsUris))
 
-	parseF, err := os.Create("parseErr.txt")
+	parseF, err := os.Create(parseErrFile)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to create parseErr.txt: %v\n", err)
+		fmt.Fprintf(os.Stderr, "failed to create %s: %v\n", parseErrFile, err)
 		os.Exit(1)
 	}
 	parsingErrorsMap := make(map[string]int)
@@ -121,9 +152,13 @@ func main() {
 
 	ctx := context.Background()
 
+	var workerLogPath string
+	if workerDebug {
+		workerLogPath = workerLogFile
+	}
 	testRunner, err := runner.NewTestRunner(runner.RunnerSettings{
-		WorkerPath:  workerPath,
-		WorkerDebug: workerDebug,
+		WorkerPath:    workerPath,
+		WorkerLogPath: workerLogPath,
 	})
 	if err != nil {
 		fmt.Printf("Failed to create test runner: %v\n", err)
@@ -137,9 +172,9 @@ func main() {
 		os.Exit(1)
 	}
 
-	validF, err := os.Create("validErr.txt")
+	validF, err := os.Create(validErrFile)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to create validErr.txt: %v\n", err)
+		fmt.Fprintf(os.Stderr, "failed to create %s: %v\n", validErrFile, err)
 		os.Exit(1)
 	}
 	validationErrorsMap := make(map[string]int)
@@ -187,7 +222,7 @@ func main() {
 	}
 
 	// Write results to file
-	if err := writeResultsToFile(latencyResults, validConfigs); err != nil {
+	if err := writeResultsToFile(resultsFile, latencyResults, validConfigs); err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 	}
 
@@ -204,9 +239,9 @@ func main() {
 }
 
 // Writes successful latency test results to out.txt
-func writeResultsToFile(sortedResults []runner.LatencyTestResult, configs []parsers.ProxyConfig) error {
+func writeResultsToFile(filename string, sortedResults []runner.LatencyTestResult, configs []parsers.ProxyConfig) error {
 	success := 0
-	f, err := os.Create("out.txt")
+	f, err := os.Create(filename)
 	if err != nil {
 		return fmt.Errorf("failed to create output: %w", err)
 	}

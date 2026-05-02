@@ -14,11 +14,11 @@ import (
 
 // TestRunner manages worker process lifecycle and test execution via IPC.
 type TestRunner struct {
-	workerPath  string
-	workerDebug bool
-	proc        *WorkerProcess
-	mu          sync.Mutex
-	testMu      sync.Mutex
+	workerPath    string
+	workerLogPath string
+	proc          *WorkerProcess
+	mu            sync.Mutex
+	testMu        sync.Mutex
 }
 
 // NewTestRunner creates a new test runner with the specified configuration.
@@ -26,7 +26,7 @@ func NewTestRunner(runnerSettings RunnerSettings) (*TestRunner, error) {
 	if runnerSettings.WorkerPath == "" {
 		return nil, fmt.Errorf("worker path is required")
 	}
-	return &TestRunner{workerPath: runnerSettings.WorkerPath, workerDebug: runnerSettings.WorkerDebug}, nil
+	return &TestRunner{workerPath: runnerSettings.WorkerPath, workerLogPath: runnerSettings.WorkerLogPath}, nil
 }
 
 func (tr *TestRunner) ensureProc() (*WorkerProcess, error) {
@@ -35,7 +35,7 @@ func (tr *TestRunner) ensureProc() (*WorkerProcess, error) {
 	if tr.proc != nil {
 		return tr.proc, nil
 	}
-	tr.proc = &WorkerProcess{path: tr.workerPath, debug: tr.workerDebug}
+	tr.proc = &WorkerProcess{path: tr.workerPath, logPath: tr.workerLogPath}
 	if err := tr.proc.Start(); err != nil {
 		tr.proc = nil
 		return nil, fmt.Errorf("start worker: %w", err)

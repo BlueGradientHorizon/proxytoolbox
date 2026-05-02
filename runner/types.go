@@ -12,8 +12,9 @@ type RunnerSettings struct {
 	// WorkerPath is the absolute path to the worker binary.
 	WorkerPath string
 
-	// WorkerDebug enables printing of worker stdout and stderr.
-	WorkerDebug bool
+	// WorkerLogPath enables logging of worker stdout and stderr to the specified file path.
+	// If empty, worker output is discarded.
+	WorkerLogPath string
 }
 
 // ValidationError represents an error validating proxy configurations

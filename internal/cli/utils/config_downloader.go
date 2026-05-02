@@ -3,7 +3,6 @@ package utils
 import (
 	"bufio"
 	"encoding/base64"
-	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -11,35 +10,22 @@ import (
 	"time"
 )
 
-func DownloadConfigs(inputFile string, outputFile string, timeout time.Duration) {
-	if _, err := os.Stat(outputFile); err == nil {
-		fmt.Printf("Output file '%s' exists. Redownload? y/n: ", outputFile)
-		reader := bufio.NewReader(os.Stdin)
-		ans, _ := reader.ReadString('\n')
-		ans = strings.ToLower(strings.TrimSpace(ans))
-
-		if ans == "" {
-			fmt.Println("Assume no.")
-			return
+func DownloadConfigs(inputFile string, outputFile string, timeout time.Duration/*, overwrite bool*/) error {
+	/*if !overwrite {
+		if _, err := os.Stat(outputFile); err == nil {
+			return nil
 		}
-		if strings.HasPrefix(ans, "n") {
-			return
-		}
-	}
+	}*/
 
 	links, err := readLines(inputFile)
 	if err != nil {
-		fmt.Printf("Error: Input file '%s' not found.\n", inputFile)
-		fmt.Printf("Please create '%s' and list one config link per line.\n", inputFile)
-		os.Exit(1)
+		return err
 	}
 
 	err = os.WriteFile(outputFile, []byte(""), 0644)
 	if err != nil {
-		fmt.Printf("Error creating output file: %v\n", err)
-		return
+		return err
 	}
-	fmt.Printf("Prepared '%s' for writing.\n---\n", outputFile)
 
 	client := &http.Client{
 		Timeout: timeout,
@@ -50,16 +36,13 @@ func DownloadConfigs(inputFile string, outputFile string, timeout time.Duration)
 
 	outF, err := os.OpenFile(outputFile, os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
-		fmt.Printf("    -> Error opening output file for append: %v\n", err)
-		return
+		return err
 	}
+	defer outF.Close()
 
 	for _, url := range links {
-		fmt.Printf("Processing: %s\n", url)
-
 		resp, err := client.Get(url)
 		if err != nil {
-			fmt.Printf("    -> Error downloading %s. Skipping.\n", url)
 			continue
 		}
 
@@ -67,7 +50,6 @@ func DownloadConfigs(inputFile string, outputFile string, timeout time.Duration)
 		body, err := io.ReadAll(io.LimitReader(resp.Body, maxSubSize))
 		resp.Body.Close()
 		if err != nil || resp.StatusCode != http.StatusOK {
-			fmt.Printf("    -> Error reading response from %s. Skipping.\n", url)
 			continue
 		}
 
@@ -93,34 +75,20 @@ func DownloadConfigs(inputFile string, outputFile string, timeout time.Duration)
 			if strings.HasPrefix(line, "#") || strings.HasPrefix(line, "//") {
 				continue
 			}
-			// TODO REMOVE
-			// if s := strings.Split(line, "://"); (s[0] != "hy2") && (s[0] != "hysteria2") {
-			// 	continue
-			// }
 			if strings.Contains(line, "://") {
 				configCount++
 				_, err := outF.WriteString(line + "\n")
 				if err != nil {
-					fmt.Printf("Error writing to file: %s\n", outputFile)
-					return
+					return err
 				}
 			}
 		}
 
 		allConfigsCount += configCount
 		downloadSuccessCount++
-		fmt.Printf("    -> Successfully downloaded. Found %d potential configs.\n", configCount)
 	}
 
-	fmt.Println("---")
-	fmt.Printf("Successfully concatenated %d subscriptions. Found configs: %d.\n", downloadSuccessCount, allConfigsCount)
-	err = outF.Close()
-	if err != nil {
-		fmt.Printf("Error when closing file: %s\n", outputFile)
-		return
-	}
-	fmt.Printf("Final configurations saved to: %s\n", outputFile)
-	fmt.Println("---")
+	return nil
 }
 
 // Helper function to read non-empty, non-comment lines
