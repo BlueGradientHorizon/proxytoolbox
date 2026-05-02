@@ -3,6 +3,7 @@ package utils
 import (
 	"bufio"
 	"encoding/base64"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -10,46 +11,69 @@ import (
 	"time"
 )
 
-func DownloadConfigs(inputFile string, outputFile string, timeout time.Duration/*, overwrite bool*/) error {
-	/*if !overwrite {
-		if _, err := os.Stat(outputFile); err == nil {
-			return nil
-		}
-	}*/
+type DownloadSettings struct {
+	InputFilePath   string
+	OutputFilePath  string
+	Timeout         time.Duration
+	MaxSubSizeBytes int64
+	OnError         func(msg string)
+	OnDLStart       func(url string)
+	OnDLSuccess     func(url string, configCount int)
+	OnDLFailure     func(url string, reason string)
+	OnSummary       func(successCount, totalConfigs int, outputFile string)
+}
 
-	links, err := readLines(inputFile)
+func DownloadConfigs(s DownloadSettings) error {
+	links, err := readLines(s.InputFilePath)
 	if err != nil {
+		if s.OnError != nil {
+			s.OnError(fmt.Sprintf("input file '%s' not found", s.InputFilePath))
+		}
 		return err
 	}
 
-	err = os.WriteFile(outputFile, []byte(""), 0644)
+	err = os.WriteFile(s.OutputFilePath, []byte(""), 0644)
 	if err != nil {
+		if s.OnError != nil {
+			s.OnError(fmt.Sprintf("error creating output file: %v", err))
+		}
 		return err
 	}
 
 	client := &http.Client{
-		Timeout: timeout,
+		Timeout: s.Timeout,
 	}
 
 	downloadSuccessCount := 0
 	allConfigsCount := 0
 
-	outF, err := os.OpenFile(outputFile, os.O_APPEND|os.O_WRONLY, 0644)
+	outF, err := os.OpenFile(s.OutputFilePath, os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
+		if s.OnError != nil {
+			s.OnError(fmt.Sprintf("error opening output file: %v", err))
+		}
 		return err
 	}
-	defer outF.Close()
 
 	for _, url := range links {
+		if s.OnDLStart != nil {
+			s.OnDLStart(url)
+		}
+
 		resp, err := client.Get(url)
 		if err != nil {
+			if s.OnDLFailure != nil {
+				s.OnDLFailure(url, "downloading")
+			}
 			continue
 		}
 
-		const maxSubSize = 64 * 1024 * 1024
-		body, err := io.ReadAll(io.LimitReader(resp.Body, maxSubSize))
+		body, err := io.ReadAll(io.LimitReader(resp.Body, s.MaxSubSizeBytes))
 		resp.Body.Close()
 		if err != nil || resp.StatusCode != http.StatusOK {
+			if s.OnDLFailure != nil {
+				s.OnDLFailure(url, "reading response")
+			}
 			continue
 		}
 
@@ -79,6 +103,10 @@ func DownloadConfigs(inputFile string, outputFile string, timeout time.Duration/
 				configCount++
 				_, err := outF.WriteString(line + "\n")
 				if err != nil {
+					if s.OnError != nil {
+						s.OnError(fmt.Sprintf("error writing to file: %s", s.OutputFilePath))
+					}
+					outF.Close()
 					return err
 				}
 			}
@@ -86,6 +114,21 @@ func DownloadConfigs(inputFile string, outputFile string, timeout time.Duration/
 
 		allConfigsCount += configCount
 		downloadSuccessCount++
+		if s.OnDLSuccess != nil {
+			s.OnDLSuccess(url, configCount)
+		}
+	}
+
+	err = outF.Close()
+	if err != nil {
+		if s.OnError != nil {
+			s.OnError(fmt.Sprintf("error closing file: %s", s.OutputFilePath))
+		}
+		return err
+	}
+
+	if s.OnSummary != nil {
+		s.OnSummary(downloadSuccessCount, allConfigsCount, s.OutputFilePath)
 	}
 
 	return nil

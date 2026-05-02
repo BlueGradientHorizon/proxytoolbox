@@ -15,49 +15,20 @@ import (
 	"github.com/bluegradienthorizon/proxytoolbox/runner"
 )
 
-func main() {
+func parseFlags() bool {
 	var workerDebug bool
 	flag.BoolVar(&workerDebug, "worker-debug", false, "Print worker stdout and stderr")
 	flag.Parse()
+	return workerDebug
+}
 
-	// File name constants
-	const (
-		inputFile     = "link_list.txt"
-		outputFile    = "configs.txt"
-		parseErrFile  = "parseErr.txt"
-		validErrFile  = "validErr.txt"
-		resultsFile   = "out.txt"
-		workerLogFile = "worker.log"
-	)
-
-	// Configure latency test parameters
-	var ltSettings = LatencyTestSettings{
-		Concurrency: 0,
-		Timeout:     7 * time.Second,
-		Rounds:      3,
-	}
-
-	// Set this to true if you want to perform speed test after latency test
-	var runSpeedTestFlag = true
-
-	// Configure speed test parameters
-	var stSettings = SpeedTestSettings{
-		Concurrency: 1,
-		Rounds:      1,
-		Timeout:     10 * time.Second,
-		Mode:        runner.SpeedTestModeDownload,
-		TestLimit:   10,
-		TargetBytes: 10 * 1024 * 1024,
-	}
-
+func discoverWorker() string {
 	reg := registry.NewRegistry()
-	// Scan only the directory where built worker binaries live.
 	reg.Discover("./bin")
 
 	workersMap := reg.All()
 	if len(workersMap) == 0 {
-		fmt.Println("No worker programs found.")
-		return
+		return ""
 	}
 
 	fmt.Println("Found worker programs:")
@@ -70,9 +41,48 @@ func main() {
 			}
 		}
 	}
+	return workerPath
+}
 
-	// Handle config download with user prompt
-	var overwrite bool
+func handleConfigDownload(outputFile, inputFile string) error {
+	overwrite := promptOverwrite(outputFile)
+	if !overwrite {
+		return nil
+	}
+
+	settings := utils.DownloadSettings{
+		InputFilePath:   inputFile,
+		OutputFilePath:  outputFile,
+		Timeout:         10 * time.Second,
+		MaxSubSizeBytes: 32 * 1024 * 1024,
+		OnError: func(msg string) {
+			fmt.Print(msg)
+		},
+		OnDLStart: func(url string) {
+			fmt.Printf("Processing: %s\n", url)
+		},
+		OnDLSuccess: func(url string, configCount int) {
+			fmt.Printf("    -> Successfully downloaded. Found %d potential configs.\n", configCount)
+		},
+		OnDLFailure: func(url string, reason string) {
+			fmt.Printf("    -> Error (%s) %s. Skipping.\n", reason, url)
+		},
+		OnSummary: func(successCount, totalConfigs int, outputFile string) {
+			fmt.Println("---")
+			fmt.Printf("Successfully concatenated %d subscriptions. Found configs: %d.\n", successCount, totalConfigs)
+			fmt.Printf("Final configurations saved to: %s\n", outputFile)
+			fmt.Println("---")
+		},
+	}
+
+	if err := utils.DownloadConfigs(settings); err != nil {
+		return err
+	}
+	fmt.Printf("Configurations saved to: %s\n", outputFile)
+	return nil
+}
+
+func promptOverwrite(outputFile string) bool {
 	if _, err := os.Stat(outputFile); err == nil {
 		fmt.Printf("Output file '%s' exists. Redownload? y/n: ", outputFile)
 		reader := bufio.NewReader(os.Stdin)
@@ -81,32 +91,29 @@ func main() {
 
 		if ans == "" {
 			fmt.Println("Assume no.")
-		} else if strings.HasPrefix(ans, "y") {
-			overwrite = true
+			return false
 		}
-	} else {
-		overwrite = true
-	}
-
-	if overwrite {
-		if err := utils.DownloadConfigs(inputFile, outputFile, 10*time.Second/*, true*/); err != nil {
-			fmt.Printf("Error downloading configs: %v\n", err)
-			os.Exit(1)
+		if strings.HasPrefix(ans, "n") {
+			return false
 		}
-		fmt.Printf("Configurations saved to: %s\n", outputFile)
+		if strings.HasPrefix(ans, "y") {
+			return true
+		}
+		return false
 	}
+	return true
+}
 
+func loadAndParseConfigs(outputFile, parseErrFile string) []parsers.ProxyConfig {
 	fmt.Printf("Attempting to load configurations from file: %s\n", outputFile)
 
-	var configs []parsers.ProxyConfig
 	data, err := os.ReadFile(outputFile)
 	if err != nil {
 		fmt.Printf("File %s not found\n", outputFile)
-		return
+		return nil
 	}
 
 	var configsUris []string
-
 	content := strings.TrimSpace(string(data))
 	for line := range strings.SplitSeq(content, "\n") {
 		line = strings.TrimSpace(line)
@@ -125,7 +132,10 @@ func main() {
 		fmt.Fprintf(os.Stderr, "failed to create %s: %v\n", parseErrFile, err)
 		os.Exit(1)
 	}
+	defer parseF.Close()
+
 	parsingErrorsMap := make(map[string]int)
+	var configs []parsers.ProxyConfig
 	for _, connUri := range configsUris {
 		p, err := parsers.ParseConfig(connUri)
 		if err != nil {
@@ -135,37 +145,30 @@ func main() {
 		}
 		configs = append(configs, *p)
 	}
-	parseF.Close()
 
 	println("parsing errors:")
 	parsingErrors := 0
-	for err, count := range parsingErrorsMap {
-		fmt.Println(count, "x", err)
+	for errStr, count := range parsingErrorsMap {
+		fmt.Println(count, "x", errStr)
 		parsingErrors += count
 	}
 	println("parsing errors total:", parsingErrors)
 
-	if len(configs) == 0 {
-		fmt.Println("! No valid configurations were loaded. Check your source or subscription content.")
-		return
-	}
+	return configs
+}
 
-	ctx := context.Background()
-
+func createTestRunner(workerPath string, workerDebug bool, workerLogFile string) (*runner.TestRunner, error) {
 	var workerLogPath string
 	if workerDebug {
 		workerLogPath = workerLogFile
 	}
-	testRunner, err := runner.NewTestRunner(runner.RunnerSettings{
+	return runner.NewTestRunner(runner.RunnerSettings{
 		WorkerPath:    workerPath,
 		WorkerLogPath: workerLogPath,
 	})
-	if err != nil {
-		fmt.Printf("Failed to create test runner: %v\n", err)
-		os.Exit(1)
-	}
-	defer testRunner.Close()
+}
 
+func validateConfigs(ctx context.Context, testRunner *runner.TestRunner, configs []parsers.ProxyConfig, validErrFile string) ([]parsers.ProxyConfig, []string) {
 	taggedConfigs, validationErrors, err := testRunner.Validate(ctx, configs)
 	if err != nil {
 		fmt.Printf("Validation error: %v\n", err)
@@ -177,17 +180,18 @@ func main() {
 		fmt.Fprintf(os.Stderr, "failed to create %s: %v\n", validErrFile, err)
 		os.Exit(1)
 	}
+	defer validF.Close()
+
 	validationErrorsMap := make(map[string]int)
 	for _, errPair := range validationErrors {
 		validationErrorsMap[errPair.Error]++
 		validF.WriteString(errPair.Tag + "\n" + errPair.Error + "\n")
 	}
-	validF.Close()
 
 	println("validation errors:")
 	validationErrsTotal := 0
-	for err, count := range validationErrorsMap {
-		fmt.Println(count, "x", err)
+	for errStr, count := range validationErrorsMap {
+		fmt.Println(count, "x", errStr)
 		validationErrsTotal += count
 	}
 	println("validation errors total:", validationErrsTotal)
@@ -205,37 +209,7 @@ func main() {
 		}
 	}
 
-	if len(validTags) == 0 {
-		fmt.Println("No valid configurations after validation.")
-		return
-	}
-
-	latencyResults, successfulTags, ltErr := runLatencyTest(ctx, validTags, ltSettings, testRunner)
-	if ltErr != nil {
-		fmt.Printf("Latency test error: %v\n", ltErr)
-		os.Exit(1)
-	}
-
-	if len(latencyResults) == 0 {
-		fmt.Println("No good results")
-		os.Exit(1)
-	}
-
-	// Write results to file
-	if err := writeResultsToFile(resultsFile, latencyResults, validConfigs); err != nil {
-		fmt.Fprintf(os.Stderr, "%v\n", err)
-	}
-
-	// Run speed tests if enabled
-	if runSpeedTestFlag {
-		var speedErr error
-		_, _, speedErr = runSpeedTest(ctx, successfulTags, stSettings, testRunner)
-		if speedErr != nil {
-			fmt.Printf("Speed test error: %v\n", speedErr)
-		}
-	}
-
-	fmt.Println("Shutting down...")
+	return validConfigs, validTags
 }
 
 // Writes successful latency test results to out.txt
@@ -271,4 +245,87 @@ func writeResultsToFile(filename string, sortedResults []runner.LatencyTestResul
 
 	fmt.Printf("success %d\n", success)
 	return nil
+}
+
+const (
+	inputFile     = "link_list.txt"
+	outputFile    = "configs.txt"
+	parseErrFile  = "parseErr.txt"
+	validErrFile  = "validErr.txt"
+	resultsFile   = "out.txt"
+	workerLogFile = "worker.log"
+)
+
+func main() {
+	workerDebug := parseFlags()
+
+	ltSettings := LatencyTestSettings{
+		Concurrency: 0,
+		Timeout:     7 * time.Second,
+		Rounds:      3,
+	}
+	runSpeedTestFlag := true
+	stSettings := SpeedTestSettings{
+		Concurrency: 1,
+		Rounds:      1,
+		Timeout:     10 * time.Second,
+		Mode:        runner.SpeedTestModeDownload,
+		TestLimit:   10,
+		TargetBytes: 10 * 1024 * 1024,
+	}
+
+	workerPath := discoverWorker()
+	if workerPath == "" {
+		fmt.Println("No worker programs found.")
+		return
+	}
+
+	if err := handleConfigDownload(outputFile, inputFile); err != nil {
+		fmt.Printf("Error downloading configs: %v\n", err)
+		os.Exit(1)
+	}
+
+	configs := loadAndParseConfigs(outputFile, parseErrFile)
+	if len(configs) == 0 {
+		fmt.Println("! No valid configurations were loaded. Check your source or subscription content.")
+		return
+	}
+
+	ctx := context.Background()
+
+	testRunner, err := createTestRunner(workerPath, workerDebug, workerLogFile)
+	if err != nil {
+		fmt.Printf("Failed to create test runner: %v\n", err)
+		os.Exit(1)
+	}
+	defer testRunner.Close()
+
+	validConfigs, validTags := validateConfigs(ctx, testRunner, configs, validErrFile)
+	if len(validTags) == 0 {
+		fmt.Println("No valid configurations after validation.")
+		return
+	}
+
+	latencyResults, successfulTags, err := runLatencyTest(ctx, validTags, ltSettings, testRunner)
+	if err != nil {
+		fmt.Printf("Latency test error: %v\n", err)
+		os.Exit(1)
+	}
+
+	if len(latencyResults) == 0 {
+		fmt.Println("No good results")
+		os.Exit(1)
+	}
+
+	if err := writeResultsToFile(resultsFile, latencyResults, validConfigs); err != nil {
+		fmt.Fprintf(os.Stderr, "%v\n", err)
+	}
+
+	if runSpeedTestFlag {
+		if _, _, err := runSpeedTest(ctx, successfulTags, stSettings, testRunner); err != nil {
+			fmt.Printf("Speed test error: %v\n", err)
+		}
+	}
+
+	fmt.Println("Shutting down...")
 }
