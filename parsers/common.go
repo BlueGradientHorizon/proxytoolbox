@@ -28,6 +28,7 @@ func buildOutboundTLSOptions(query url.Values, protocol string) (*core.TLSConfig
 	fp := query.Get("fp")
 	pbk := query.Get("pbk")
 	sid := query.Get("sid")
+	spx := query.Get("spx")
 	// pqv := query.Get("pqv")
 	ech := query.Get("ech")
 	allowInsecure := query.Get("allowInsecure") == "1"
@@ -65,6 +66,7 @@ func buildOutboundTLSOptions(query url.Values, protocol string) (*core.TLSConfig
 		config.Reality = &core.RealityConfig{
 			PublicKey: pbk,
 			ShortID:   sid,
+			SpiderX:   spx,
 		}
 
 		// uTLS fingerprint is required by reality client
@@ -133,14 +135,24 @@ func buildV2RayTransportOptions(query url.Values, protocol string) (*core.Transp
 			Host: host,
 			Path: path,
 		}
-	case "kcp":
-		return nil, errors.New("buildV2RayTransportOptions: transport kcp unsupported")
-	case "mkcp":
-		return nil, errors.New("buildV2RayTransportOptions: transport mkcp unsupported")
+	case "kcp", "mkcp":
+		config.Type = "kcp"
+		config.KCP = &core.KCPConfig{
+			Seed: query.Get("seed"),
+		}
 	case "xhttp":
-		return nil, errors.New("buildV2RayTransportOptions: transport xhttp unsupported")
+		config.Type = "xhttp"
+		config.XHTTP = &core.XHTTPConfig{
+			Host: host,
+			Path: path,
+			Mode: query.Get("mode"),
+		}
 	case "splithttp":
-		return nil, errors.New("buildV2RayTransportOptions: transport splithttp unsupported")
+		config.Type = "splithttp"
+		config.SplitHTTP = &core.SplitHTTPConfig{
+			Host: host,
+			Path: path,
+		}
 	default:
 		return nil, fmt.Errorf("buildV2RayTransportOptions: unknown transport %s", type_)
 	}

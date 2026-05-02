@@ -167,6 +167,9 @@ type RealityConfig struct {
 
 	// ShortID is the REALITY short ID
 	ShortID string
+
+	// SpiderX is the REALITY SpiderX path (optional)
+	SpiderX string
 }
 
 // ECHConfig represents Encrypted Client Hello configuration

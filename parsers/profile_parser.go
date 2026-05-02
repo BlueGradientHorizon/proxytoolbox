@@ -27,12 +27,20 @@ func ParseConfig(connURI string) (*ProxyConfig, error) {
 
 	// TODO should be case-insensitive
 	parsers := map[string]ConfigParser{
-		"vless":     VLESSParser{},
-		"trojan":    TrojanParser{},
-		"vmess":     VMessParser{},
-		"ss":        ShadowsocksParser{},
-		"hysteria2": Hysteria2Parser{},
-		"hy2":       Hysteria2Parser{},
+		"vless":       VLESSParser{},
+		"trojan":      TrojanParser{},
+		"vmess":       VMessParser{},
+		"ss":          ShadowsocksParser{},
+		"shadowsocks": ShadowsocksParser{},
+		"hysteria2":   Hysteria2Parser{},
+		"hy2":         Hysteria2Parser{},
+		"wg":          WireguardParser{},
+		"wireguard":   WireguardParser{},
+		"socks":       SocksParser{},
+		"socks5":      SocksParser{},
+		"http":        HTTPParser{},
+		"https":       HTTPParser{},
+		"vlite":       VLiteParser{},
 	}
 
 	scheme := strings.ToLower(splitURI[0])
