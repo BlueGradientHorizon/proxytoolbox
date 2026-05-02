@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -32,16 +33,38 @@ func discoverWorker() string {
 	}
 
 	fmt.Println("Found worker programs:")
-	var workerPath string
+	var workers []registry.WorkerInfo
 	for _, list := range workersMap {
 		for _, info := range list {
 			fmt.Printf("- %s (%s) at %s\n", info.Name, info.Version, info.Path)
-			if workerPath == "" {
-				workerPath = info.Path
-			}
+			workers = append(workers, info)
 		}
 	}
-	return workerPath
+
+	if len(workers) == 1 {
+		return workers[0].Path
+	}
+
+	return selectWorker(workers)
+}
+
+func selectWorker(workers []registry.WorkerInfo) string {
+	reader := bufio.NewReader(os.Stdin)
+	for {
+		fmt.Printf("Select worker (1-%d): ", len(workers))
+		input, err := reader.ReadString('\n')
+		if err != nil {
+			fmt.Println("Error reading input.")
+			continue
+		}
+		input = strings.TrimSpace(input)
+		num, err := strconv.Atoi(input)
+		if err != nil || num < 1 || num > len(workers) {
+			fmt.Println("Invalid selection. Please enter a valid number.")
+			continue
+		}
+		return workers[num-1].Path
+	}
 }
 
 func handleConfigDownload(outputFile, inputFile string) error {
