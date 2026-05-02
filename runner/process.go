@@ -64,7 +64,7 @@ func (tp *WorkerProcess) Start() error {
 	}
 
 	if tp.logPath != "" {
-		logFile, err := os.OpenFile(tp.logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+		logFile, err := os.OpenFile(tp.logPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 		if err != nil {
 			tp.kill()
 			return fmt.Errorf("cannot create log file: %w", err)

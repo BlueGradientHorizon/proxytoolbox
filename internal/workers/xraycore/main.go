@@ -6,11 +6,12 @@ import (
 	"strings"
 
 	"github.com/bluegradienthorizon/proxytoolbox/core"
-	"github.com/bluegradienthorizon/proxytoolbox/internal/workers/utils"
 	"github.com/bluegradienthorizon/proxytoolbox/worker"
 
 	"github.com/xtls/xray-core/app/dispatcher"
+	alog "github.com/xtls/xray-core/app/log"
 	"github.com/xtls/xray-core/app/proxyman"
+	clog "github.com/xtls/xray-core/common/log"
 	xnet "github.com/xtls/xray-core/common/net"
 	"github.com/xtls/xray-core/common/serial"
 	xraycore "github.com/xtls/xray-core/core"
@@ -27,7 +28,7 @@ type xrayAdapter struct {
 func (a *xrayAdapter) Info() worker.CoreInfo {
 	return worker.CoreInfo{
 		Name:    "xray-core",
-		Version: utils.GetModuleVersion("github.com/xtls/xray-core"),
+		Version: "v" + xraycore.Version(),
 	}
 }
 
@@ -37,14 +38,7 @@ func (a *xrayAdapter) Convert(config *core.OutboundConfig) (any, error) {
 
 func (a *xrayAdapter) ValidateSingle(ctx context.Context, obj any) error {
 	ob := obj.(*xraycore.OutboundHandlerConfig)
-	config := &xraycore.Config{
-		App: []*serial.TypedMessage{
-			serial.ToTypedMessage(&dispatcher.Config{}),
-			serial.ToTypedMessage(&proxyman.OutboundConfig{}),
-		},
-		Outbound: []*xraycore.OutboundHandlerConfig{ob},
-	}
-	inst, err := xraycore.NewWithContext(ctx, config)
+	inst, err := newXrayInstance(ctx, []*xraycore.OutboundHandlerConfig{ob})
 	if inst != nil {
 		inst.Close()
 	}
@@ -52,16 +46,11 @@ func (a *xrayAdapter) ValidateSingle(ctx context.Context, obj any) error {
 }
 
 func (a *xrayAdapter) ValidateBatch(ctx context.Context, objs []any) error {
-	config := &xraycore.Config{
-		App: []*serial.TypedMessage{
-			serial.ToTypedMessage(&dispatcher.Config{}),
-			serial.ToTypedMessage(&proxyman.OutboundConfig{}),
-		},
+	obs := make([]*xraycore.OutboundHandlerConfig, len(objs))
+	for i, obj := range objs {
+		obs[i] = obj.(*xraycore.OutboundHandlerConfig)
 	}
-	for _, obj := range objs {
-		config.Outbound = append(config.Outbound, obj.(*xraycore.OutboundHandlerConfig))
-	}
-	inst, err := xraycore.NewWithContext(ctx, config)
+	inst, err := newXrayInstance(ctx, obs)
 	if inst != nil {
 		inst.Close()
 	}
@@ -69,17 +58,11 @@ func (a *xrayAdapter) ValidateBatch(ctx context.Context, objs []any) error {
 }
 
 func (a *xrayAdapter) CreateInstance(ctx context.Context, converted []any) (any, error) {
-	config := &xraycore.Config{
-		App: []*serial.TypedMessage{
-			serial.ToTypedMessage(&dispatcher.Config{}),
-			serial.ToTypedMessage(&proxyman.OutboundConfig{}),
-		},
-	}
-
+	obs := make([]*xraycore.OutboundHandlerConfig, len(converted))
 	a.proxies = make([]worker.ProxyInfo, len(converted))
 	for i, obj := range converted {
 		ob := obj.(*xraycore.OutboundHandlerConfig)
-		config.Outbound = append(config.Outbound, ob)
+		obs[i] = ob
 
 		typ := "unknown"
 		if strings.Contains(ob.ProxySettings.Type, "vless") {
@@ -105,7 +88,7 @@ func (a *xrayAdapter) CreateInstance(ctx context.Context, converted []any) (any,
 		}
 	}
 
-	return xraycore.NewWithContext(ctx, config)
+	return newXrayInstance(ctx, obs)
 }
 
 func (a *xrayAdapter) StartInstance(inst any) error {
@@ -139,6 +122,23 @@ func (a *xrayAdapter) CloseInstance(inst any) {
 
 func (a *xrayAdapter) TLSProvider(ctx context.Context) worker.TLSConfigProvider {
 	return nil
+}
+
+func newXrayInstance(ctx context.Context, obs []*xraycore.OutboundHandlerConfig) (*xraycore.Instance, error) {
+	config := &xraycore.Config{
+		App: []*serial.TypedMessage{
+			serial.ToTypedMessage(&alog.Config{
+				ErrorLogType:  alog.LogType_None,
+				AccessLogType: alog.LogType_None,
+				ErrorLogLevel: clog.Severity_Unknown,
+				EnableDnsLog:  false,
+			}),
+			serial.ToTypedMessage(&dispatcher.Config{}),
+			serial.ToTypedMessage(&proxyman.OutboundConfig{}),
+		},
+		Outbound: obs,
+	}
+	return xraycore.NewWithContext(ctx, config)
 }
 
 func main() {
