@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/bluegradienthorizon/proxytoolbox/worker"
@@ -28,6 +29,7 @@ type WorkerProcess struct {
 	conn    net.Conn
 	dec     *json.Decoder
 	bw      *bufio.Writer
+	logFile *os.File
 }
 
 // Start executes the worker with --run, reads the TCP port from stdout, and connects.
@@ -62,20 +64,36 @@ func (tp *WorkerProcess) Start() error {
 	}
 
 	if tp.logPath != "" {
-		logFile, err := os.Create(tp.logPath)
+		logFile, err := os.OpenFile(tp.logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 		if err != nil {
 			tp.kill()
 			return fmt.Errorf("cannot create log file: %w", err)
 		}
+		tp.logFile = logFile
+
+		var logMu sync.Mutex
 		logFunc := func(r io.Reader, pipeName string) {
-			scanner := bufio.NewScanner(r)
-			for scanner.Scan() {
-				fmt.Fprintln(logFile, scanner.Text())
-				logFile.Sync()
+			br, ok := r.(*bufio.Reader)
+			if !ok {
+				br = bufio.NewReader(r)
 			}
-			if err := scanner.Err(); err != nil {
-				fmt.Fprintf(logFile, "%s scanner error: %v\n", pipeName, err)
-				logFile.Sync()
+			for {
+				lineBytes, err := br.ReadBytes('\n')
+				if len(lineBytes) > 0 {
+					logMu.Lock()
+					logFile.Write(lineBytes)
+					logFile.Sync()
+					logMu.Unlock()
+				}
+				if err != nil {
+					if err != io.EOF && !errors.Is(err, os.ErrClosed) {
+						logMu.Lock()
+						fmt.Fprintf(logFile, "%s read error: %v\n", pipeName, err)
+						logFile.Sync()
+						logMu.Unlock()
+					}
+					break
+				}
 			}
 		}
 		go logFunc(rd, "stdout")
@@ -166,6 +184,10 @@ func (tp *WorkerProcess) Close() error {
 		tp.conn = nil
 	}
 	tp.kill()
+	if tp.logFile != nil {
+		tp.logFile.Close()
+		tp.logFile = nil
+	}
 	return nil
 }
 
