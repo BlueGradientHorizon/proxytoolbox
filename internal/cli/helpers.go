@@ -188,7 +188,7 @@ func createTestRunner(workerPath string, workerDebug bool, workerLogFile string)
 }
 
 func validateConfigs(ctx context.Context, testRunner *runner.TestRunner, configs []parsers.ProxyConfig, validErrFile string) ([]parsers.ProxyConfig, []string, error) {
-	taggedConfigs, validationErrors, err := testRunner.Validate(ctx, configs)
+	taggedConfigs, validationErrors, err := testRunner.Validate(ctx, configs, runner.DefaultConfigTaggerFunc)
 	if err != nil {
 		return nil, nil, fmt.Errorf("validation error: %w", err)
 	}
