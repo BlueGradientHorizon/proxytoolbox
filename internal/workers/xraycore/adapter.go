@@ -17,7 +17,7 @@ func NewAdapter() *Adapter {
 
 func (a *Adapter) ConvertOutbound(config *core.OutboundConfig) (any, error) {
 	if config == nil {
-		return nil, errors.New("ConvertOutbound: nil config")
+		return nil, errors.New("nil config")
 	}
 
 	outboundConf := &conf.OutboundDetourConfig{
@@ -71,7 +71,6 @@ func (a *Adapter) ConvertOutbound(config *core.OutboundConfig) (any, error) {
 
 	case core.Hysteria2Settings:
 		outboundConf.Protocol = "hysteria"
-		// i need to pass s.Password to HysteriaConfig in buildStreamConfig
 		settings := &conf.HysteriaClientConfig{
 			Version: 2,
 			Address: parseAddr(config.Server),
@@ -124,29 +123,25 @@ func (a *Adapter) ConvertOutbound(config *core.OutboundConfig) (any, error) {
 		return nil, fmt.Errorf("vlite is not supported by xray-core")
 
 	default:
-		return nil, fmt.Errorf("unsupported protocol")
+		return nil, fmt.Errorf("unsupported protocol %s", config.Type)
 	}
 
-	// Build stream configuration using conf structs
 	streamConfig, err := a.buildStreamConfig(config)
 	if err != nil {
 		return nil, err
 	}
 	outboundConf.StreamSetting = streamConfig
 
-	// Build the complete outbound configuration
 	return outboundConf.Build()
 }
 
 func (a *Adapter) buildStreamConfig(config *core.OutboundConfig) (*conf.StreamConfig, error) {
 	streamConfig := &conf.StreamConfig{}
 
-	// Set network protocol
 	if config.Transport != nil {
 		streamConfig.Network = (*conf.TransportProtocol)(&config.Transport.Type)
 	}
 
-	// Build transport settings inline
 	if config.Transport == nil {
 		streamConfig.TCPSettings = &conf.TCPConfig{}
 	} else {
@@ -202,7 +197,6 @@ func (a *Adapter) buildStreamConfig(config *core.OutboundConfig) (*conf.StreamCo
 		}
 	}
 
-	// Build security settings using conf structs for proper REALITY initialization
 	if config.TLS != nil && config.TLS.Enabled {
 		if config.TLS.Reality != nil {
 			streamConfig.Security = "reality"

@@ -18,7 +18,7 @@ func NewAdapter() *Adapter {
 
 func (a *Adapter) ConvertOutbound(config *core.OutboundConfig) (*option.Outbound, error) {
 	if config == nil {
-		return nil, errors.New("ConvertOutbound: nil config")
+		return nil, errors.New("nil config")
 	}
 
 	outbound := &option.Outbound{
@@ -28,7 +28,7 @@ func (a *Adapter) ConvertOutbound(config *core.OutboundConfig) (*option.Outbound
 
 	switch settings := config.Settings.(type) {
 	case core.VLESSSettings:
-		vlessOptions := option.VLESSOutboundOptions{
+		outbound.Options = &option.VLESSOutboundOptions{
 			ServerOptions: option.ServerOptions{
 				Server:     config.Server,
 				ServerPort: config.Port,
@@ -36,48 +36,18 @@ func (a *Adapter) ConvertOutbound(config *core.OutboundConfig) (*option.Outbound
 			UUID: settings.UUID,
 			Flow: settings.Flow,
 		}
-		if config.TLS != nil {
-			tls, err := a.convertTLS(config.TLS)
-			if err != nil {
-				return nil, err
-			}
-			vlessOptions.OutboundTLSOptionsContainer.TLS = tls
-		}
-		if config.Transport != nil {
-			transport, err := a.convertTransport(config.Transport)
-			if err != nil {
-				return nil, err
-			}
-			vlessOptions.Transport = transport
-		}
-		outbound.Options = &vlessOptions
 
 	case core.TrojanSettings:
-		trojanOptions := option.TrojanOutboundOptions{
+		outbound.Options = &option.TrojanOutboundOptions{
 			ServerOptions: option.ServerOptions{
 				Server:     config.Server,
 				ServerPort: config.Port,
 			},
 			Password: settings.Password,
 		}
-		if config.TLS != nil {
-			tls, err := a.convertTLS(config.TLS)
-			if err != nil {
-				return nil, err
-			}
-			trojanOptions.OutboundTLSOptionsContainer.TLS = tls
-		}
-		if config.Transport != nil {
-			transport, err := a.convertTransport(config.Transport)
-			if err != nil {
-				return nil, err
-			}
-			trojanOptions.Transport = transport
-		}
-		outbound.Options = &trojanOptions
 
 	case core.VMessSettings:
-		vmessOptions := option.VMessOutboundOptions{
+		outbound.Options = &option.VMessOutboundOptions{
 			ServerOptions: option.ServerOptions{
 				Server:     config.Server,
 				ServerPort: config.Port,
@@ -86,24 +56,9 @@ func (a *Adapter) ConvertOutbound(config *core.OutboundConfig) (*option.Outbound
 			Security: settings.Security,
 			AlterId:  settings.AlterID,
 		}
-		if config.TLS != nil {
-			tls, err := a.convertTLS(config.TLS)
-			if err != nil {
-				return nil, err
-			}
-			vmessOptions.OutboundTLSOptionsContainer.TLS = tls
-		}
-		if config.Transport != nil {
-			transport, err := a.convertTransport(config.Transport)
-			if err != nil {
-				return nil, err
-			}
-			vmessOptions.Transport = transport
-		}
-		outbound.Options = &vmessOptions
 
 	case core.ShadowsocksSettings:
-		ssOptions := option.ShadowsocksOutboundOptions{
+		outbound.Options = &option.ShadowsocksOutboundOptions{
 			ServerOptions: option.ServerOptions{
 				Server:     config.Server,
 				ServerPort: config.Port,
@@ -111,139 +66,151 @@ func (a *Adapter) ConvertOutbound(config *core.OutboundConfig) (*option.Outbound
 			Method:   settings.Method,
 			Password: settings.Password,
 		}
-		outbound.Options = &ssOptions
 
 	case core.Hysteria2Settings:
-		hy2Options := option.Hysteria2OutboundOptions{
+		s, ok := config.Settings.(core.Hysteria2Settings)
+		if !ok {
+			return nil, fmt.Errorf("not a hysteria2 settings instance")
+		}
+		var obfs *option.Hysteria2Obfs
+		if s.Obfs != nil {
+			obfs = &option.Hysteria2Obfs{
+				Type:     s.Obfs.Type,
+				Password: s.Obfs.Password,
+			}
+		}
+		outbound.Options = &option.Hysteria2OutboundOptions{
 			ServerOptions: option.ServerOptions{
 				Server:     config.Server,
 				ServerPort: config.Port,
 			},
 			Password: settings.Password,
+			Obfs:     obfs,
 		}
-		if settings.Obfs != nil {
-			hy2Options.Obfs = &option.Hysteria2Obfs{
-				Type:     settings.Obfs.Type,
-				Password: settings.Obfs.Password,
-			}
-		}
-		if config.TLS != nil {
-			tls, err := a.convertTLS(config.TLS)
-			if err != nil {
-				return nil, err
-			}
-			hy2Options.OutboundTLSOptionsContainer.TLS = tls
-		}
-		outbound.Options = &hy2Options
 
 	default:
-		return nil, fmt.Errorf("ConvertOutbound: unsupported protocol settings type")
+		return nil, fmt.Errorf("unsupported protocol %s", config.Type)
+	}
+
+	if err := a.buildOptionOutbound(config, outbound); err != nil {
+		return nil, err
 	}
 
 	return outbound, nil
 }
 
-func (a *Adapter) convertTLS(config *core.TLSConfig) (*option.OutboundTLSOptions, error) {
-	if config == nil || !config.Enabled {
-		return nil, nil
-	}
-
-	tls := &option.OutboundTLSOptions{
-		Enabled:    config.Enabled,
-		ServerName: config.ServerName,
-		Insecure:   config.Insecure,
-	}
-
-	if len(config.ALPN) > 0 {
-		tls.ALPN = badoption.Listable[string]{}
-		for _, alpn := range config.ALPN {
-			tls.ALPN = append(tls.ALPN, alpn)
+func (a *Adapter) buildOptionOutbound(config *core.OutboundConfig, outbound *option.Outbound) error {
+	var transport *option.V2RayTransportOptions
+	if config.Transport != nil {
+		transport = &option.V2RayTransportOptions{}
+		switch config.Transport.Type {
+		case "tcp", "":
+			transport = nil
+		case "http":
+			transport.Type = C.V2RayTransportTypeHTTP
+			if config.Transport.HTTP != nil {
+				transport.HTTPOptions = option.V2RayHTTPOptions{
+					Host:   config.Transport.HTTP.Host,
+					Path:   config.Transport.HTTP.Path,
+					Method: config.Transport.HTTP.Method,
+				}
+			}
+		case "ws":
+			transport.Type = C.V2RayTransportTypeWebsocket
+			if config.Transport.WebSocket != nil {
+				transport.WebsocketOptions = option.V2RayWebsocketOptions{
+					Path: config.Transport.WebSocket.Path,
+				}
+				if config.Transport.WebSocket.Host != "" {
+					transport.WebsocketOptions.Headers = badoption.HTTPHeader{
+						"Host": badoption.Listable[string]{config.Transport.WebSocket.Host},
+					}
+				}
+			}
+		case "quic":
+			transport.Type = C.V2RayTransportTypeQUIC
+			transport.QUICOptions = option.V2RayQUICOptions{}
+		case "grpc":
+			transport.Type = C.V2RayTransportTypeGRPC
+			if config.Transport.GRPC != nil {
+				transport.GRPCOptions = option.V2RayGRPCOptions{
+					ServiceName: config.Transport.GRPC.ServiceName,
+				}
+			}
+		case "httpupgrade":
+			transport.Type = C.V2RayTransportTypeHTTPUpgrade
+			if config.Transport.HTTPUpgrade != nil {
+				transport.HTTPUpgradeOptions = option.V2RayHTTPUpgradeOptions{
+					Host: config.Transport.HTTPUpgrade.Host,
+					Path: config.Transport.HTTPUpgrade.Path,
+				}
+			}
+		default:
+			return fmt.Errorf("unsupported transport type %s", config.Transport.Type)
 		}
 	}
 
-	if config.Fingerprint != "" {
-		tls.UTLS = &option.OutboundUTLSOptions{
-			Enabled:     true,
-			Fingerprint: config.Fingerprint,
+	var tls *option.OutboundTLSOptions
+	if config.TLS != nil && config.TLS.Enabled {
+		tls = &option.OutboundTLSOptions{
+			Enabled:    config.TLS.Enabled,
+			ServerName: config.TLS.ServerName,
+			Insecure:   config.TLS.Insecure,
 		}
-	}
 
-	if config.Reality != nil {
-		tls.Reality = &option.OutboundRealityOptions{
-			Enabled:   true,
-			PublicKey: config.Reality.PublicKey,
-			ShortID:   config.Reality.ShortID,
+		if len(config.TLS.ALPN) > 0 {
+			tls.ALPN = badoption.Listable[string]{}
+			for _, alpn := range config.TLS.ALPN {
+				tls.ALPN = append(tls.ALPN, alpn)
+			}
 		}
-		if tls.UTLS == nil {
+
+		if config.TLS.Fingerprint != "" {
 			tls.UTLS = &option.OutboundUTLSOptions{
 				Enabled:     true,
-				Fingerprint: "chrome",
+				Fingerprint: config.TLS.Fingerprint,
 			}
 		}
-	}
 
-	if config.ECH != nil {
-		tls.ECH = &option.OutboundECHOptions{
-			Enabled: true,
-			Config:  config.ECH.Config,
-		}
-	}
-
-	return tls, nil
-}
-
-func (a *Adapter) convertTransport(config *core.TransportConfig) (*option.V2RayTransportOptions, error) {
-	if config == nil {
-		return nil, nil
-	}
-
-	transport := &option.V2RayTransportOptions{}
-
-	switch config.Type {
-	case "tcp", "":
-		return nil, nil
-	case "http":
-		transport.Type = C.V2RayTransportTypeHTTP
-		if config.HTTP != nil {
-			transport.HTTPOptions = option.V2RayHTTPOptions{
-				Host:   config.HTTP.Host,
-				Path:   config.HTTP.Path,
-				Method: config.HTTP.Method,
+		if config.TLS.Reality != nil {
+			tls.Reality = &option.OutboundRealityOptions{
+				Enabled:   true,
+				PublicKey: config.TLS.Reality.PublicKey,
+				ShortID:   config.TLS.Reality.ShortID,
 			}
-		}
-	case "ws":
-		transport.Type = C.V2RayTransportTypeWebsocket
-		if config.WebSocket != nil {
-			transport.WebsocketOptions = option.V2RayWebsocketOptions{
-				Path: config.WebSocket.Path,
-			}
-			if config.WebSocket.Host != "" {
-				transport.WebsocketOptions.Headers = badoption.HTTPHeader{
-					"Host": badoption.Listable[string]{config.WebSocket.Host},
+			if tls.UTLS == nil {
+				tls.UTLS = &option.OutboundUTLSOptions{
+					Enabled:     true,
+					Fingerprint: "chrome",
 				}
 			}
 		}
-	case "quic":
-		transport.Type = C.V2RayTransportTypeQUIC
-		transport.QUICOptions = option.V2RayQUICOptions{}
-	case "grpc":
-		transport.Type = C.V2RayTransportTypeGRPC
-		if config.GRPC != nil {
-			transport.GRPCOptions = option.V2RayGRPCOptions{
-				ServiceName: config.GRPC.ServiceName,
+
+		if config.TLS.ECH != nil {
+			tls.ECH = &option.OutboundECHOptions{
+				Enabled: true,
+				Config:  config.TLS.ECH.Config,
 			}
 		}
-	case "httpupgrade":
-		transport.Type = C.V2RayTransportTypeHTTPUpgrade
-		if config.HTTPUpgrade != nil {
-			transport.HTTPUpgradeOptions = option.V2RayHTTPUpgradeOptions{
-				Host: config.HTTPUpgrade.Host,
-				Path: config.HTTPUpgrade.Path,
-			}
-		}
-	default:
-		return nil, fmt.Errorf("convertTransport: unsupported transport type %s", config.Type)
 	}
 
-	return transport, nil
+	switch opts := outbound.Options.(type) {
+	case *option.VLESSOutboundOptions:
+		opts.TLS = tls
+		opts.Transport = transport
+	case *option.TrojanOutboundOptions:
+		opts.TLS = tls
+		opts.Transport = transport
+	case *option.VMessOutboundOptions:
+		opts.TLS = tls
+		opts.Transport = transport
+	case *option.ShadowsocksOutboundOptions:
+	case *option.Hysteria2OutboundOptions:
+		opts.TLS = tls
+
+	default:
+		return fmt.Errorf("unsupported protocol %s", config.Type)
+	}
+
+	return nil
 }
