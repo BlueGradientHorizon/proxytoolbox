@@ -163,37 +163,48 @@ func main() {
 		}
 	}
 
-	if runSpeedTestFlag && len(latencyPassedConfigs) > 0 {
+	// Switch is only here to break out on errors without deep code nesting
+	switch {
+	case runSpeedTestFlag && len(latencyPassedConfigs) > 0:
 		testRunner, err := createTestRunner(workerPath, workerDebug, workerLogFile)
 		if err != nil {
 			fmt.Printf("Failed to create test runner for speed test: %v\n", err)
-		} else {
-			_, speedValidTags, err := validateConfigs(ctx, testRunner, latencyPassedConfigs, validErrFile)
-			if err != nil {
-				fmt.Printf("Speed test validation error: %v\n", err)
-			} else if len(speedValidTags) > 0 {
-				speedResults, _, err := runSpeedTest(ctx, speedValidTags, stSettings, testRunner)
-				if err != nil {
-					fmt.Printf("Speed test error: %v\n", err)
-				} else {
-					speedResultMap := make(map[string]runner.SpeedTestResult, len(speedResults))
-					for _, r := range speedResults {
-						speedResultMap[r.Tag] = r
-					}
-					sortedSpeedResults := make([]runner.SpeedTestResult, 0, len(speedResults))
-					for _, ltResult := range allLatencyResults {
-						if ltResult.Error == nil {
-							if sr, ok := speedResultMap[ltResult.Tag]; ok {
-								sortedSpeedResults = append(sortedSpeedResults, sr)
-							}
-						}
-					}
-					if err := writeResultsToFile(stResultsFile, NewSpeedResultWriters(sortedSpeedResults), latencyPassedConfigs); err != nil {
-						fmt.Fprintf(os.Stderr, "%v\n", err)
-					}
-				}
+			break
+		}
+		defer testRunner.Close()
+
+		_, speedValidTags, err := validateConfigs(ctx, testRunner, latencyPassedConfigs, validErrFile)
+		if err != nil {
+			fmt.Printf("Speed test validation error: %v\n", err)
+			break
+		}
+		if len(speedValidTags) == 0 {
+			break
+		}
+
+		speedResults, _, err := runSpeedTest(ctx, speedValidTags, stSettings, testRunner)
+		if err != nil {
+			fmt.Printf("Speed test error: %v\n", err)
+			break
+		}
+
+		speedResultMap := make(map[string]runner.SpeedTestResult, len(speedResults))
+		for _, r := range speedResults {
+			speedResultMap[r.Tag] = r
+		}
+
+		// Sort to the same sequence as in latency results
+		sortedSpeedResults := make([]runner.SpeedTestResult, 0, len(speedResults))
+		for _, ltResult := range allLatencyResults {
+			if ltResult.Error != nil {
+				continue
 			}
-			testRunner.Close()
+			if sr, ok := speedResultMap[ltResult.Tag]; ok {
+				sortedSpeedResults = append(sortedSpeedResults, sr)
+			}
+		}
+		if err := writeResultsToFile(stResultsFile, NewSpeedResultWriters(sortedSpeedResults), latencyPassedConfigs); err != nil {
+			fmt.Fprintf(os.Stderr, "%v\n", err)
 		}
 	}
 
