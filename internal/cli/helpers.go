@@ -233,7 +233,45 @@ func validateConfigs(ctx context.Context, testRunner *runner.TestRunner, configs
 	return validConfigs, validTags, nil
 }
 
-func writeResultsToFile(filename string, sortedResults []runner.LatencyTestResult, configs []parsers.ProxyConfig) error {
+// ResultWriter abstracts over latency and speed test results for generic file writing.
+type ResultWriter interface {
+	Tag() string
+	Error() error
+}
+
+type latencyResultWriter struct {
+	r runner.LatencyTestResult
+}
+
+func (w latencyResultWriter) Tag() string  { return w.r.Tag }
+func (w latencyResultWriter) Error() error { return w.r.Error }
+
+type speedResultWriter struct {
+	r runner.SpeedTestResult
+}
+
+func (w speedResultWriter) Tag() string  { return w.r.Tag }
+func (w speedResultWriter) Error() error { return w.r.Error }
+
+// NewLatencyResultWriters wraps a slice of LatencyTestResult into ResultWriter slice.
+func NewLatencyResultWriters(results []runner.LatencyTestResult) []ResultWriter {
+	out := make([]ResultWriter, len(results))
+	for i, r := range results {
+		out[i] = latencyResultWriter{r: r}
+	}
+	return out
+}
+
+// NewSpeedResultWriters wraps a slice of SpeedTestResult into ResultWriter slice.
+func NewSpeedResultWriters(results []runner.SpeedTestResult) []ResultWriter {
+	out := make([]ResultWriter, len(results))
+	for i, r := range results {
+		out[i] = speedResultWriter{r: r}
+	}
+	return out
+}
+
+func writeResultsToFile(filename string, sortedResults []ResultWriter, configs []parsers.ProxyConfig) error {
 	success := 0
 	f, err := os.Create(filename)
 	if err != nil {
@@ -249,13 +287,13 @@ func writeResultsToFile(filename string, sortedResults []runner.LatencyTestResul
 		}
 	}
 	for _, r := range sortedResults {
-		if r.Error == nil {
+		if r.Error() == nil {
 			success++
-			if uri, ok := tagToURI[r.Tag]; ok {
+			if uri, ok := tagToURI[r.Tag()]; ok {
 				w.WriteString(uri)
 				w.WriteString("\n")
 			} else {
-				println("result tag is missing!!! " + r.Tag)
+				println("result tag is missing!!! " + r.Tag())
 			}
 		}
 	}

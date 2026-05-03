@@ -15,7 +15,8 @@ const (
 	outputFile    = "configs.txt"
 	parseErrFile  = "parseErr.txt"
 	validErrFile  = "validErr.txt"
-	resultsFile   = "out.txt"
+	ltResultsFile = "lt-out.txt"
+	stResultsFile = "st-out.txt"
 	workerLogFile = "worker.log"
 )
 
@@ -29,12 +30,12 @@ func main() {
 	}
 	runSpeedTestFlag := true
 	stSettings := speedTestSettings{
-		Concurrency: 1,
+		Concurrency: 0,
 		Rounds:      1,
-		Timeout:     4 * time.Second,
+		Timeout:     10 * time.Second,
 		Mode:        runner.SpeedTestModeDownload,
-		TestLimit:   10,
-		TargetBytes: 1 * 1024 * 1024,
+		TestLimit:   0,
+		TargetBytes: 1024,
 	}
 
 	workerPath := discoverWorker()
@@ -143,7 +144,7 @@ func main() {
 		return s1 && !s2
 	})
 
-	if err := writeResultsToFile(resultsFile, allLatencyResults, validConfigs); err != nil {
+	if err := writeResultsToFile(ltResultsFile, NewLatencyResultWriters(allLatencyResults), validConfigs); err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 	}
 
@@ -156,8 +157,11 @@ func main() {
 			if err != nil {
 				fmt.Printf("Speed test validation error: %v\n", err)
 			} else if len(speedValidTags) > 0 {
-				if _, _, err := runSpeedTest(ctx, speedValidTags, stSettings, testRunner); err != nil {
+				speedResults, _, err := runSpeedTest(ctx, speedValidTags, stSettings, testRunner)
+				if err != nil {
 					fmt.Printf("Speed test error: %v\n", err)
+				} else if err := writeResultsToFile(stResultsFile, NewSpeedResultWriters(speedResults), validConfigs); err != nil {
+					fmt.Fprintf(os.Stderr, "%v\n", err)
 				}
 			}
 			testRunner.Close()
