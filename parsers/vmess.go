@@ -1,7 +1,6 @@
 package parsers
 
 import (
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,22 +16,7 @@ type VMessParser struct{}
 func (p VMessParser) ParseConfig(connURI string) (*ProxyConfig, error) {
 	base64Part := strings.TrimPrefix(connURI, "vmess://")
 
-	var enc *base64.Encoding
-	isURL := strings.ContainsAny(base64Part, "-_")
-	isRaw := !strings.HasSuffix(base64Part, "=")
-
-	switch {
-	case isURL && isRaw:
-		enc = base64.RawURLEncoding
-	case isURL && !isRaw:
-		enc = base64.URLEncoding
-	case !isURL && isRaw:
-		enc = base64.RawStdEncoding
-	default:
-		enc = base64.StdEncoding
-	}
-
-	decodedBytes, err := enc.DecodeString(base64Part)
+	decodedBytes, err := tryDecodeBase64(base64Part)
 	if err != nil {
 		return nil, errors.New("VMessParser.ParseConfig: " + err.Error())
 	}

@@ -1,6 +1,7 @@
 package parsers
 
 import (
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"math"
@@ -241,4 +242,22 @@ func extractCommonURIData(uri string, scheme string, fixer CustomURIFixer) (*url
 	}
 
 	return parsedURI, address, port, nil
+}
+
+func tryDecodeBase64(s string) ([]byte, error) {
+	encodings := []*base64.Encoding{
+		base64.StdEncoding,
+		base64.RawStdEncoding,
+		base64.URLEncoding,
+		base64.RawURLEncoding,
+	}
+	var lastErr error
+	for _, enc := range encodings {
+		if decoded, err := enc.DecodeString(s); err == nil {
+			return decoded, nil
+		} else {
+			lastErr = err
+		}
+	}
+	return nil, lastErr
 }

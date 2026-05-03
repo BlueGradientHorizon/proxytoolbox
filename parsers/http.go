@@ -1,7 +1,6 @@
 package parsers
 
 import (
-	"encoding/base64"
 	"errors"
 	"strings"
 
@@ -25,16 +24,7 @@ func (p HTTPParser) ParseConfig(connURI string) (*ProxyConfig, error) {
 	password, _ := uri.User.Password()
 
 	if password == "" && username != "" {
-		dec, err := base64.StdEncoding.DecodeString(username)
-		if err != nil {
-			dec, err = base64.URLEncoding.DecodeString(username)
-		}
-		if err != nil {
-			dec, err = base64.RawURLEncoding.DecodeString(username)
-		}
-		if err != nil {
-			dec, err = base64.RawStdEncoding.DecodeString(username)
-		}
+		dec, err := tryDecodeBase64(username)
 		if err == nil {
 			decStr := string(dec)
 			if strings.Contains(decStr, ":") {

@@ -1,7 +1,6 @@
 package parsers
 
 import (
-	"encoding/base64"
 	"errors"
 	"strings"
 
@@ -66,13 +65,7 @@ func (p ShadowsocksParser) ParseConfig(connURI string) (*ProxyConfig, error) {
 	}
 
 	if !strings.Contains(authPart, ":") {
-		decodedAuthBytes, err := base64.StdEncoding.DecodeString(authPart)
-		if err != nil {
-			decodedAuthBytes, err = base64.URLEncoding.DecodeString(authPart)
-		}
-		if err != nil {
-			decodedAuthBytes, err = base64.RawURLEncoding.DecodeString(authPart)
-		}
+		decodedAuthBytes, err := tryDecodeBase64(authPart)
 		if err == nil {
 			decodedAuth := string(decodedAuthBytes)
 			if strings.Contains(decodedAuth, ":") {
