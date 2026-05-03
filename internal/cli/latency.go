@@ -10,13 +10,13 @@ import (
 	"github.com/bluegradienthorizon/proxytoolbox/runner"
 )
 
-type LatencyTestSettings struct {
+type latencyTestSettings struct {
 	Concurrency int
 	Timeout     time.Duration
 	Rounds      int
 }
 
-func runLatencyTest(ctx context.Context, tags []string, ltSettings LatencyTestSettings, testRunner *runner.TestRunner) ([]runner.LatencyTestResult, []string, error) {
+func runLatencyTest(ctx context.Context, tags []string, ltSettings latencyTestSettings, testRunner *runner.TestRunner) ([]runner.LatencyTestResult, []string, error) {
 	var printerChan chan runner.LatencyTestResult
 	var printer *utils.StatsPrinter
 	var printDone chan bool
@@ -29,7 +29,7 @@ func runLatencyTest(ctx context.Context, tags []string, ltSettings LatencyTestSe
 			Timeout:      ltSettings.Timeout,
 			Rounds:       ltSettings.Rounds,
 			RoundStartedCallback: func(round int, outboundsLen int) {
-				println(fmt.Sprintf("round %d/%d", round+1, ltSettings.Rounds))
+				println(fmt.Sprintf("latencytest round %d/%d", round+1, ltSettings.Rounds))
 				printerChan = make(chan runner.LatencyTestResult, outboundsLen)
 				printer = utils.NewStatsPrinter(outboundsLen, printerChan)
 				printDone = make(chan bool)

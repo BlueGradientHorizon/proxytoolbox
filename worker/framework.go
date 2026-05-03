@@ -175,7 +175,7 @@ func (bw *BaseWorker) runTest(ctx context.Context, settings any, tags []string, 
 	configs, objects, missing := bw.selectByTags(tags)
 
 	for _, tag := range missing {
-		sendResult(Response{Type: ResponseTypeResult, Tag: tag, Error: "validation failed"})
+		sendResult(Response{Type: ResponseTypeResult, Tag: tag, Error: "tag not found"})
 	}
 
 	if len(configs) == 0 {
@@ -246,7 +246,7 @@ func (bw *BaseWorker) runTest(ctx context.Context, settings any, tags []string, 
 	go func() {
 		start := time.Now()
 		bw.adapter.CloseInstance(inst)
-		fmt.Printf("instance.Close() took %v\n", time.Since(start))
+		fmt.Printf("instance closing took %v\n", time.Since(start))
 	}()
 	return nil
 }

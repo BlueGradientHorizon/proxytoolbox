@@ -9,8 +9,8 @@ import (
 	"github.com/bluegradienthorizon/proxytoolbox/runner"
 )
 
-// SpeedTestSettings holds configuration for speed tests
-type SpeedTestSettings struct {
+// speedTestSettings holds configuration for speed tests
+type speedTestSettings struct {
 	Concurrency int
 	Rounds      int
 	Timeout     time.Duration
@@ -19,7 +19,7 @@ type SpeedTestSettings struct {
 	TargetBytes int64
 }
 
-func runSpeedTest(ctx context.Context, tags []string, stSettings SpeedTestSettings, testRunner *runner.TestRunner) ([]runner.SpeedTestResult, []string, error) {
+func runSpeedTest(ctx context.Context, tags []string, stSettings speedTestSettings, testRunner *runner.TestRunner) ([]runner.SpeedTestResult, []string, error) {
 	// Limit configs based on test limit
 	if stSettings.TestLimit > 0 {
 		limit := min(stSettings.TestLimit, len(tags))
@@ -34,7 +34,7 @@ func runSpeedTest(ctx context.Context, tags []string, stSettings SpeedTestSettin
 			Rounds:       stSettings.Rounds,
 			Timeout:      stSettings.Timeout,
 			RoundStartedCallback: func(round, outboundsLen int) {
-				println(fmt.Sprintf("round %d/%d", round+1, stSettings.Rounds))
+				println(fmt.Sprintf("speedtest round %d/%d", round+1, stSettings.Rounds))
 			},
 			ProgressCallback: func(result runner.SpeedTestResult) {
 				var t string
