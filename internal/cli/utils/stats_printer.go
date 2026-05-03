@@ -1,27 +1,25 @@
 package utils
 
-import (
-	"fmt"
+import "fmt"
 
-	"github.com/bluegradienthorizon/proxytoolbox/runner"
-)
-
-type StatsPrinter struct {
+type StatsPrinter[T any] struct {
 	total     int
 	completed int
 	succeeded int
 	failed    int
-	results   <-chan runner.LatencyTestResult
+	results   <-chan T
+	hasError  func(T) bool
 }
 
-func NewStatsPrinter(total int, results <-chan runner.LatencyTestResult) *StatsPrinter {
-	return &StatsPrinter{
-		total:   total,
-		results: results,
+func NewStatsPrinter[T any](total int, results <-chan T, hasError func(T) bool) *StatsPrinter[T] {
+	return &StatsPrinter[T]{
+		total:    total,
+		results:  results,
+		hasError: hasError,
 	}
 }
 
-func (s *StatsPrinter) Start(done chan<- bool) {
+func (s *StatsPrinter[T]) Start(done chan<- bool) {
 	s.printStats()
 	for range s.total {
 		result, ok := <-s.results
@@ -30,10 +28,10 @@ func (s *StatsPrinter) Start(done chan<- bool) {
 			break
 		}
 		s.completed++
-		if result.Error == nil {
-			s.succeeded++
-		} else {
+		if s.hasError(result) {
 			s.failed++
+		} else {
+			s.succeeded++
 		}
 		s.printStats()
 
@@ -45,7 +43,7 @@ func (s *StatsPrinter) Start(done chan<- bool) {
 	done <- true
 }
 
-func (s *StatsPrinter) printStats() {
+func (s *StatsPrinter[T]) printStats() {
 	running := s.total - s.completed
 	fmt.Printf("\rRunning: %-4d | Succeeded: %-4d | Failed: %-4d | Total: %d",
 		running, s.succeeded, s.failed, s.total)

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/bluegradienthorizon/proxytoolbox/internal/cli/utils"
 	"github.com/bluegradienthorizon/proxytoolbox/presets"
 	"github.com/bluegradienthorizon/proxytoolbox/runner"
 )
@@ -26,6 +27,10 @@ func runSpeedTest(ctx context.Context, tags []string, stSettings speedTestSettin
 		tags = append([]string(nil), tags[:limit]...)
 	}
 
+	var printerChan chan runner.SpeedTestResult
+	var printer *utils.StatsPrinter[runner.SpeedTestResult]
+	var printDone chan bool
+
 	config := runner.SpeedTestRunnerSettings{
 		BaseTestRunnerSettings: runner.BaseTestRunnerSettings{
 			SortResults:  true,
@@ -35,22 +40,17 @@ func runSpeedTest(ctx context.Context, tags []string, stSettings speedTestSettin
 			Timeout:      stSettings.Timeout,
 			RoundStartedCallback: func(round, outboundsLen int) {
 				println(fmt.Sprintf("speedtest round %d/%d", round+1, stSettings.Rounds))
+				printerChan = make(chan runner.SpeedTestResult, outboundsLen)
+				printer = utils.NewStatsPrinter(outboundsLen, printerChan, func(r runner.SpeedTestResult) bool { return r.Error != nil })
+				printDone = make(chan bool)
+				go printer.Start(printDone)
 			},
 			ProgressCallback: func(result runner.SpeedTestResult) {
-				var t string
-				if stSettings.Mode == runner.SpeedTestModeDownload {
-					t = "download"
-				} else {
-					t = "upload"
-				}
-				if result.Error == nil {
-					fmt.Printf("%s: %.2f MB/s\n", t, result.Speed/1024/1024)
-				} else {
-					fmt.Printf("%s: %s\n", t, result.Error.Error())
-				}
+				printerChan <- result
 			},
 			RoundEndedCallback: func(round int) {
-
+				<-printDone
+				close(printerChan)
 			},
 		},
 		TargetBytes: stSettings.TargetBytes,

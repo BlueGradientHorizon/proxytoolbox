@@ -18,7 +18,7 @@ type latencyTestSettings struct {
 
 func runLatencyTest(ctx context.Context, tags []string, ltSettings latencyTestSettings, testRunner *runner.TestRunner) ([]runner.LatencyTestResult, []string, error) {
 	var printerChan chan runner.LatencyTestResult
-	var printer *utils.StatsPrinter
+	var printer *utils.StatsPrinter[runner.LatencyTestResult]
 	var printDone chan bool
 
 	config := runner.LatencyTestRunnerSettings{
@@ -31,7 +31,7 @@ func runLatencyTest(ctx context.Context, tags []string, ltSettings latencyTestSe
 			RoundStartedCallback: func(round int, outboundsLen int) {
 				println(fmt.Sprintf("latencytest round %d/%d", round+1, ltSettings.Rounds))
 				printerChan = make(chan runner.LatencyTestResult, outboundsLen)
-				printer = utils.NewStatsPrinter(outboundsLen, printerChan)
+				printer = utils.NewStatsPrinter(outboundsLen, printerChan, func(r runner.LatencyTestResult) bool { return r.Error != nil })
 				printDone = make(chan bool)
 				go printer.Start(printDone)
 			},
