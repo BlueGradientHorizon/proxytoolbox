@@ -175,8 +175,22 @@ func main() {
 				speedResults, _, err := runSpeedTest(ctx, speedValidTags, stSettings, testRunner)
 				if err != nil {
 					fmt.Printf("Speed test error: %v\n", err)
-				} else if err := writeResultsToFile(stResultsFile, NewSpeedResultWriters(speedResults), latencyPassedConfigs); err != nil {
-					fmt.Fprintf(os.Stderr, "%v\n", err)
+				} else {
+					speedResultMap := make(map[string]runner.SpeedTestResult, len(speedResults))
+					for _, r := range speedResults {
+						speedResultMap[r.Tag] = r
+					}
+					sortedSpeedResults := make([]runner.SpeedTestResult, 0, len(speedResults))
+					for _, ltResult := range allLatencyResults {
+						if ltResult.Error == nil {
+							if sr, ok := speedResultMap[ltResult.Tag]; ok {
+								sortedSpeedResults = append(sortedSpeedResults, sr)
+							}
+						}
+					}
+					if err := writeResultsToFile(stResultsFile, NewSpeedResultWriters(sortedSpeedResults), latencyPassedConfigs); err != nil {
+						fmt.Fprintf(os.Stderr, "%v\n", err)
+					}
 				}
 			}
 			testRunner.Close()
