@@ -31,7 +31,7 @@ func toRawConfigs(configs []*core.OutboundConfig) []*worker.RawConfig {
 	return out
 }
 
-func mustMarshal(v interface{}) (json.RawMessage, error) {
+func mustMarshal(v any) (json.RawMessage, error) {
 	b, err := json.Marshal(v)
 	if err != nil {
 		return nil, err

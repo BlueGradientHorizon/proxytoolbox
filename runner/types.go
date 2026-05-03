@@ -61,7 +61,7 @@ type BaseTestRunnerSettings struct {
 	// ProgressCallback receives real-time test updates as each proxy completes
 	// Optional: can be nil if progress reporting is not needed
 	// The actual type depends on the test type (LatencyTestResult or SpeedTestResult)
-	ProgressCallback interface{}
+	ProgressCallback any
 
 	// FilterFailed removes failed proxies between rounds
 	// When true, only successful proxies from round N proceed to round N+1

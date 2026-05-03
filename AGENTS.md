@@ -15,7 +15,8 @@ When working on this project, focus on the library code first and edit `internal
 
 # Code conventions
 
-Package `worker` should only be imported either by code from package `runner` or from worker implementation. `runner` is supposed to be public API for usual library usage which manages `worker`. 
+Package `worker` should only be imported either by code from package `runner` or from worker implementation. `runner` is supposed to be public API for usual library usage which manages `worker`.
+Use `any` instead of `interface{}`.
 
 # Building
 
