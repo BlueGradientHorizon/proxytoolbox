@@ -7,6 +7,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/bluegradienthorizon/proxytoolbox/parsers"
 	"github.com/bluegradienthorizon/proxytoolbox/runner"
 )
 
@@ -148,19 +149,33 @@ func main() {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 	}
 
-	if runSpeedTestFlag && len(validConfigs) > 0 {
+	latencyPassedTags := make(map[string]struct{})
+	for _, result := range allLatencyResults {
+		if result.Error == nil {
+			latencyPassedTags[result.Tag] = struct{}{}
+		}
+	}
+
+	var latencyPassedConfigs []parsers.ProxyConfig
+	for _, cfg := range validConfigs {
+		if _, ok := latencyPassedTags[cfg.Config.Tag]; ok {
+			latencyPassedConfigs = append(latencyPassedConfigs, cfg)
+		}
+	}
+
+	if runSpeedTestFlag && len(latencyPassedConfigs) > 0 {
 		testRunner, err := createTestRunner(workerPath, workerDebug, workerLogFile)
 		if err != nil {
 			fmt.Printf("Failed to create test runner for speed test: %v\n", err)
 		} else {
-			_, speedValidTags, err := validateConfigs(ctx, testRunner, validConfigs, validErrFile)
+			_, speedValidTags, err := validateConfigs(ctx, testRunner, latencyPassedConfigs, validErrFile)
 			if err != nil {
 				fmt.Printf("Speed test validation error: %v\n", err)
 			} else if len(speedValidTags) > 0 {
 				speedResults, _, err := runSpeedTest(ctx, speedValidTags, stSettings, testRunner)
 				if err != nil {
 					fmt.Printf("Speed test error: %v\n", err)
-				} else if err := writeResultsToFile(stResultsFile, NewSpeedResultWriters(speedResults), validConfigs); err != nil {
+				} else if err := writeResultsToFile(stResultsFile, NewSpeedResultWriters(speedResults), latencyPassedConfigs); err != nil {
 					fmt.Fprintf(os.Stderr, "%v\n", err)
 				}
 			}
