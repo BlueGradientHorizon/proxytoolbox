@@ -4,10 +4,9 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"sort"
 	"time"
 
-	"github.com/bluegradienthorizon/proxytoolbox/parsers"
+	"github.com/bluegradienthorizon/proxytoolbox/presets"
 	"github.com/bluegradienthorizon/proxytoolbox/runner"
 )
 
@@ -28,6 +27,7 @@ func main() {
 		Concurrency: 0,
 		Timeout:     7 * time.Second,
 		Rounds:      3,
+		TestURL:     presets.Google204,
 	}
 	runSpeedTestFlag := true
 	stSettings := speedTestSettings{
@@ -37,6 +37,7 @@ func main() {
 		Mode:        runner.SpeedTestModeDownload,
 		TestLimit:   0,
 		TargetBytes: 1024,
+		Provider:    presets.CloudflareProvider,
 	}
 
 	workerPath := discoverWorker()
@@ -58,21 +59,15 @@ func main() {
 
 	ctx := context.Background()
 
-	for i := range configs {
-		if configs[i].Config != nil && configs[i].Config.Tag == "" {
-			configs[i].Config.Tag = fmt.Sprintf("outbound-%d", i)
-		}
-	}
-
-	fmt.Println("Validating all configs...")
-	preValidateRunner, err := createTestRunner(workerPath, workerDebug, workerLogFile)
+	testRunner, err := createTestRunner(workerPath, workerDebug, workerLogFile)
 	if err != nil {
-		fmt.Printf("Failed to create test runner for validation: %v\n", err)
+		fmt.Printf("Failed to create test runner: %v\n", err)
 		os.Exit(1)
 	}
+	defer testRunner.Close()
 
-	validConfigs, _, err := validateConfigs(ctx, preValidateRunner, configs, validErrFile)
-	preValidateRunner.Close()
+	fmt.Println("Validating all configs...")
+	validConfigs, _, err := validateConfigs(ctx, testRunner, configs, validErrFile)
 	if err != nil {
 		fmt.Printf("Validation error: %v\n", err)
 		os.Exit(1)
@@ -86,7 +81,6 @@ func main() {
 	fmt.Printf("Valid configs: %d\n", len(validConfigs))
 
 	const batchSize = 5000
-
 	var allLatencyResults []runner.LatencyTestResult
 
 	for batchStart := 0; batchStart < len(validConfigs); batchStart += batchSize {
@@ -95,40 +89,24 @@ func main() {
 
 		fmt.Printf("Processing batch %d-%d (%d configs)\n", batchStart, batchEnd, len(batchConfigs))
 
-		testRunner, err := createTestRunner(workerPath, workerDebug, workerLogFile)
-		if err != nil {
-			fmt.Printf("Failed to create test runner: %v\n", err)
-			continue
-		}
-
 		_, validTags, err := validateConfigs(ctx, testRunner, batchConfigs, validErrFile)
 		if err != nil {
 			fmt.Printf("Batch validation error: %v\n", err)
-			testRunner.Close()
 			continue
 		}
 
 		if len(validTags) == 0 {
 			fmt.Println("No valid configurations in this batch.")
-			testRunner.Close()
 			continue
 		}
 
 		latencyResults, _, err := runLatencyTest(ctx, validTags, ltSettings, testRunner)
 		if err != nil {
 			fmt.Printf("Latency test error: %v\n", err)
-			testRunner.Close()
-			continue
-		}
-
-		if len(latencyResults) == 0 {
-			fmt.Println("No good results in this batch.")
-			testRunner.Close()
 			continue
 		}
 
 		allLatencyResults = append(allLatencyResults, latencyResults...)
-		testRunner.Close()
 	}
 
 	if len(allLatencyResults) == 0 {
@@ -136,76 +114,16 @@ func main() {
 		os.Exit(1)
 	}
 
-	sort.Slice(allLatencyResults, func(i, j int) bool {
-		s1 := allLatencyResults[i].Error == nil
-		s2 := allLatencyResults[j].Error == nil
-		if s1 && s2 {
-			return allLatencyResults[i].Delay < allLatencyResults[j].Delay
-		}
-		return s1 && !s2
-	})
+	sortLatencyResults(allLatencyResults)
 
 	if err := writeResultsToFile(ltResultsFile, NewLatencyResultWriters(allLatencyResults), validConfigs); err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 	}
 
-	latencyPassedTags := make(map[string]struct{})
-	for _, result := range allLatencyResults {
-		if result.Error == nil {
-			latencyPassedTags[result.Tag] = struct{}{}
-		}
-	}
+	latencyPassedConfigs := filterPassedConfigs(validConfigs, allLatencyResults)
 
-	var latencyPassedConfigs []parsers.ProxyConfig
-	for _, cfg := range validConfigs {
-		if _, ok := latencyPassedTags[cfg.Config.Tag]; ok {
-			latencyPassedConfigs = append(latencyPassedConfigs, cfg)
-		}
-	}
-
-	// Switch is only here to break out on errors without deep code nesting
-	switch {
-	case runSpeedTestFlag && len(latencyPassedConfigs) > 0:
-		testRunner, err := createTestRunner(workerPath, workerDebug, workerLogFile)
-		if err != nil {
-			fmt.Printf("Failed to create test runner for speed test: %v\n", err)
-			break
-		}
-		defer testRunner.Close()
-
-		_, speedValidTags, err := validateConfigs(ctx, testRunner, latencyPassedConfigs, validErrFile)
-		if err != nil {
-			fmt.Printf("Speed test validation error: %v\n", err)
-			break
-		}
-		if len(speedValidTags) == 0 {
-			break
-		}
-
-		speedResults, _, err := runSpeedTest(ctx, speedValidTags, stSettings, testRunner)
-		if err != nil {
-			fmt.Printf("Speed test error: %v\n", err)
-			break
-		}
-
-		speedResultMap := make(map[string]runner.SpeedTestResult, len(speedResults))
-		for _, r := range speedResults {
-			speedResultMap[r.Tag] = r
-		}
-
-		// Sort to the same sequence as in latency results
-		sortedSpeedResults := make([]runner.SpeedTestResult, 0, len(speedResults))
-		for _, ltResult := range allLatencyResults {
-			if ltResult.Error != nil {
-				continue
-			}
-			if sr, ok := speedResultMap[ltResult.Tag]; ok {
-				sortedSpeedResults = append(sortedSpeedResults, sr)
-			}
-		}
-		if err := writeResultsToFile(stResultsFile, NewSpeedResultWriters(sortedSpeedResults), latencyPassedConfigs); err != nil {
-			fmt.Fprintf(os.Stderr, "%v\n", err)
-		}
+	if runSpeedTestFlag && len(latencyPassedConfigs) > 0 {
+		handleSpeedTests(ctx, testRunner, latencyPassedConfigs, allLatencyResults, stSettings, validErrFile, stResultsFile)
 	}
 
 	fmt.Println("Shutting down...")

@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/bluegradienthorizon/proxytoolbox/internal/cli/utils"
-	"github.com/bluegradienthorizon/proxytoolbox/presets"
 	"github.com/bluegradienthorizon/proxytoolbox/runner"
 )
 
@@ -14,6 +13,7 @@ type latencyTestSettings struct {
 	Concurrency int
 	Timeout     time.Duration
 	Rounds      int
+	TestURL     string
 }
 
 func runLatencyTest(ctx context.Context, tags []string, ltSettings latencyTestSettings, testRunner *runner.TestRunner) ([]runner.LatencyTestResult, []string, error) {
@@ -43,7 +43,7 @@ func runLatencyTest(ctx context.Context, tags []string, ltSettings latencyTestSe
 				close(printerChan)
 			},
 		},
-		TestURL: presets.Google204,
+		TestURL: ltSettings.TestURL,
 	}
 
 	testResults, err := testRunner.RunLatencyTests(ctx, tags, config)

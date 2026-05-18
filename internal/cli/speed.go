@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/bluegradienthorizon/proxytoolbox/internal/cli/utils"
-	"github.com/bluegradienthorizon/proxytoolbox/presets"
 	"github.com/bluegradienthorizon/proxytoolbox/runner"
+	"github.com/bluegradienthorizon/proxytoolbox/worker"
 )
 
 // speedTestSettings holds configuration for speed tests
@@ -18,6 +18,7 @@ type speedTestSettings struct {
 	Mode        runner.SpeedTestMode
 	TestLimit   int
 	TargetBytes int64
+	Provider    worker.SpeedTestProvider
 }
 
 func runSpeedTest(ctx context.Context, tags []string, stSettings speedTestSettings, testRunner *runner.TestRunner) ([]runner.SpeedTestResult, []string, error) {
@@ -55,7 +56,7 @@ func runSpeedTest(ctx context.Context, tags []string, stSettings speedTestSettin
 		},
 		TargetBytes: stSettings.TargetBytes,
 		Mode:        stSettings.Mode,
-		Provider:    presets.CloudflareProvider,
+		Provider:    stSettings.Provider,
 	}
 
 	results, err := testRunner.RunSpeedTests(ctx, tags, config)
