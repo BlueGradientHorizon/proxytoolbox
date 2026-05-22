@@ -26,6 +26,11 @@ func (p VLESSParser) ParseConfig(connURI string) (*ProxyConfig, error) {
 		flow = "xtls-rprx-vision"
 	}
 
+	encryption := params.Get("encryption")
+	if encryption == "" {
+		encryption = "none"
+	}
+
 	TLSOptions, err := buildOutboundTLSOptions(params, "vless")
 	if err != nil {
 		return nil, errors.New("VLESSParser.ParseConfig: " + err.Error())
@@ -42,8 +47,9 @@ func (p VLESSParser) ParseConfig(connURI string) (*ProxyConfig, error) {
 		Server: addr,
 		Port:   port,
 		Settings: core.VLESSSettings{
-			UUID: uri.User.Username(),
-			Flow: flow,
+			UUID:       uri.User.Username(),
+			Flow:       flow,
+			Encryption: encryption,
 		},
 		TLS:       TLSOptions,
 		Transport: transportOptions,

@@ -32,7 +32,7 @@ func (a *Adapter) ConvertOutbound(config *core.OutboundConfig) (any, error) {
 			Port:       uint16(config.Port),
 			Id:         s.UUID,
 			Flow:       s.Flow,
-			Encryption: "none", // TODO query param should be used instead
+			Encryption: s.Encryption,
 		}
 		settingsJSON, _ := json.Marshal(settings)
 		outboundConf.Settings = (*json.RawMessage)(&settingsJSON)

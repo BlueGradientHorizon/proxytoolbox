@@ -40,6 +40,9 @@ type VLESSSettings struct {
 
 	// Flow is the flow control mode (e.g., xtls-rprx-vision)
 	Flow string
+
+	// Encryption is the encryption method (usually "none")
+	Encryption string
 }
 
 // Protocol returns "vless"
