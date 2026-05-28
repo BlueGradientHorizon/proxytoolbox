@@ -143,9 +143,50 @@ func tryFixURI(uri string) (string, error) {
 	userEscaped = strings.ReplaceAll(userEscaped, "+", "%20")
 
 	afterAuthority := rest[authorityEnd:] // In example, starts with ?host=
+
+	// Fix #9: encode query parameters and fragment
+	var pathPart, queryPart, fragmentPart string
+	work := afterAuthority
+	if idx := strings.Index(work, "#"); idx != -1 {
+		fragmentPart = work[idx:]
+		work = work[:idx]
+	}
+	if idx := strings.Index(work, "?"); idx != -1 {
+		queryPart = work[idx:]
+		pathPart = work[:idx]
+	} else {
+		pathPart = work
+	}
+
+	if len(queryPart) > 1 {
+		pairs := strings.Split(queryPart[1:], "&")
+		for i, pair := range pairs {
+			if pair == "" {
+				continue
+			}
+			kv := strings.SplitN(pair, "=", 2)
+			if len(kv) == 2 {
+				valEscaped := url.QueryEscape(kv[1])
+				valEscaped = strings.ReplaceAll(valEscaped, "+", "%20")
+				pairs[i] = kv[0] + "=" + valEscaped
+			} else {
+				pairs[i] = pair
+			}
+		}
+		queryPart = "?" + strings.Join(pairs, "&")
+	}
+
+	if len(fragmentPart) > 1 {
+		fragmentEscaped := url.QueryEscape(fragmentPart[1:])
+		fragmentEscaped = strings.ReplaceAll(fragmentEscaped, "+", "%20")
+		fragmentPart = "#" + fragmentEscaped
+	}
+
+	afterAuthority = pathPart + queryPart + fragmentPart
+
 	uri = scheme + "://" + userEscaped + "@" + addr + afterAuthority
 
-	// trojan://8r%3C%5B9%27l6hAO%238ZQi&==%40@46.8.228.74:2053?host=Koma-YT.PAGeS.Dev&path=/trTelegram🇨🇳 @WangCai2&security=tls&sni=Koma-YT.PAGeS.Dev&type=ws&note=something#7410 | 🇫🇮 Finland | TROJAN | 📺 YT | TG: @YoutubeUnBlockRu
+	// trojan://8r%3C%5B9%27l6hAO%238ZQi%26%3D%3D%40@46.8.228.74:2053?host=Koma-YT.PAGeS.Dev&path=%2FtrTelegram%F0%9F%87%A8%F0%9F%87%B3%20%40WangCai2&security=tls&sni=Koma-YT.PAGeS.Dev&type=ws&note=something#7410%20%7C%20%F0%9F%87%AB%F0%9F%87%AE%20Finland%20%7C%20TROJAN%20%7C%20%F0%9F%93%BA%20YT%20%7C%20TG%3A%20%40YoutubeUnBlockRu
 
 	return uri, nil
 }
