@@ -25,8 +25,8 @@ type xrayAdapter struct {
 	proxies []worker.ProxyInfo
 }
 
-func (a *xrayAdapter) Info() worker.CoreInfo {
-	return worker.CoreInfo{
+func (a *xrayAdapter) Info() worker.PBCoreInfo {
+	return worker.PBCoreInfo{
 		Name:    "xray-core",
 		Version: "v" + xraycore.Version(),
 	}

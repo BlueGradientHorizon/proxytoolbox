@@ -3,7 +3,6 @@ package runner
 import (
 	"bufio"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -27,7 +26,6 @@ type WorkerProcess struct {
 	logPath string
 	cmd     *exec.Cmd
 	conn    net.Conn
-	dec     *json.Decoder
 	bw      *bufio.Writer
 	logFile *os.File
 }
@@ -110,15 +108,13 @@ func (tp *WorkerProcess) Start() error {
 		return fmt.Errorf("cannot connect to worker: %w", err)
 	}
 	tp.conn = conn
-	tp.dec = json.NewDecoder(conn)
 	tp.bw = bufio.NewWriter(conn)
 	return nil
 }
 
 // SendRequest sends the request and consumes all streamed responses until "done".
-func (tp *WorkerProcess) SendRequest(ctx context.Context, req worker.Request, onResponse func(worker.Response)) error {
-	b, _ := json.Marshal(req)
-	if _, err := fmt.Fprintf(tp.bw, "%s\n", b); err != nil {
+func (tp *WorkerProcess) SendRequest(ctx context.Context, req *worker.PBRequest, onResponse func(*worker.PBResponse)) error {
+	if err := worker.WritePB(tp.bw, req); err != nil {
 		return err
 	}
 	if err := tp.bw.Flush(); err != nil {
@@ -134,13 +130,13 @@ func (tp *WorkerProcess) SendRequest(ctx context.Context, req worker.Request, on
 		}
 
 		type decodeResult struct {
-			r   worker.Response
+			r   worker.PBResponse
 			err error
 		}
 		ch := make(chan decodeResult, 1)
 		go func() {
-			var r worker.Response
-			err := tp.dec.Decode(&r)
+			var r worker.PBResponse
+			err := worker.ReadPB(tp.conn, &r)
 			ch <- decodeResult{r, err}
 		}()
 
@@ -155,23 +151,19 @@ func (tp *WorkerProcess) SendRequest(ctx context.Context, req worker.Request, on
 				}
 				return fmt.Errorf("decode error: %w", res.err)
 			}
-			switch r.Type {
-			case worker.ResponseTypeDone:
+			switch r.GetType() {
+			case worker.PBResponseType_RESPONSE_DONE:
 				if testErr != nil {
 					return testErr
 				}
 				return nil
-			case worker.ResponseTypeError:
-				// Do not return immediately; keep reading until "done"
-				// so the next round does not read leftover messages.
-				testErr = fmt.Errorf("tester error: %s", r.Error)
-			case worker.ResponseTypeBusy:
-				// Do not return immediately; keep reading until "done"
-				// so the next round does not read leftover messages.
+			case worker.PBResponseType_RESPONSE_ERROR:
+				testErr = fmt.Errorf("tester error: %s", r.GetError())
+			case worker.PBResponseType_RESPONSE_BUSY:
 				testErr = ErrWorkerBusy
 			default:
 				if onResponse != nil {
-					onResponse(r)
+					onResponse(&r)
 				}
 			}
 		}

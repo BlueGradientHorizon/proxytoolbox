@@ -1,7 +1,6 @@
 package runner
 
 import (
-	"encoding/json"
 	"sort"
 
 	"github.com/bluegradienthorizon/proxytoolbox/core"
@@ -19,24 +18,8 @@ func extractConfigs(configs []parsers.ProxyConfig) []*core.OutboundConfig {
 	return out
 }
 
-func toRawConfigs(configs []*core.OutboundConfig) []*worker.RawConfig {
-	out := make([]*worker.RawConfig, 0, len(configs))
-	for _, c := range configs {
-		s, _ := json.Marshal(c.Settings)
-		out = append(out, &worker.RawConfig{
-			Tag: c.Tag, Type: c.Type, Server: c.Server, Port: c.Port,
-			Settings: s, TLS: c.TLS, Transport: c.Transport,
-		})
-	}
-	return out
-}
-
-func mustMarshal(v any) (json.RawMessage, error) {
-	b, err := json.Marshal(v)
-	if err != nil {
-		return nil, err
-	}
-	return json.RawMessage(b), nil
+func toPBOutboundConfigs(configs []*core.OutboundConfig) []*worker.PBOutboundConfig {
+	return worker.CoreConfigsToPBOutbound(configs)
 }
 
 type testSettings interface {

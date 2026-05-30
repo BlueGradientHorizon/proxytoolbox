@@ -17,8 +17,8 @@ import (
 
 type singboxAdapter struct{}
 
-func (a *singboxAdapter) Info() worker.CoreInfo {
-	return worker.CoreInfo{
+func (a *singboxAdapter) Info() worker.PBCoreInfo {
+	return worker.PBCoreInfo{
 		Name:    "sing-box",
 		Version: utils.GetModuleVersion("github.com/sagernet/sing-box"),
 	}

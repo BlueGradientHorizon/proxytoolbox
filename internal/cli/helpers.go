@@ -15,6 +15,7 @@ import (
 	"github.com/bluegradienthorizon/proxytoolbox/parsers"
 	"github.com/bluegradienthorizon/proxytoolbox/registry"
 	"github.com/bluegradienthorizon/proxytoolbox/runner"
+	"github.com/bluegradienthorizon/proxytoolbox/worker"
 )
 
 func parseFlags() bool {
@@ -203,8 +204,9 @@ func validateConfigs(ctx context.Context, testRunner *runner.TestRunner, configs
 
 		validationErrorsMap := make(map[string]int)
 		for _, errPair := range validationErrors {
-			validationErrorsMap[errPair.Error]++
-			validF.WriteString(errPair.Tag + "\n" + errPair.Error + "\n")
+			tag := worker.PBBytesToString(errPair.GetTag())
+			validationErrorsMap[errPair.GetError()]++
+			validF.WriteString(tag + "\n" + errPair.GetError() + "\n")
 		}
 
 		println("validation errors:")
@@ -222,7 +224,7 @@ func validateConfigs(ctx context.Context, testRunner *runner.TestRunner, configs
 	validTags := make([]string, 0, len(taggedConfigs))
 	errMap := make(map[string]bool)
 	for _, ve := range validationErrors {
-		errMap[ve.Tag] = true
+		errMap[worker.PBBytesToString(ve.GetTag())] = true
 	}
 	for _, c := range taggedConfigs {
 		if c.Config != nil && !errMap[c.Config.Tag] {

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -26,61 +25,55 @@ func (a *Adapter) ConvertOutbound(config *core.OutboundConfig) (any, error) {
 
 	switch s := config.Settings.(type) {
 	case core.VLESSSettings:
-		outboundConf.Protocol = "vless"
-		settings := &conf.VLessOutboundConfig{
+		if err := applyOutboundSettings(outboundConf, "vless", &conf.VLessOutboundConfig{
 			Address:    parseAddr(config.Server),
 			Port:       uint16(config.Port),
 			Id:         s.UUID,
 			Flow:       s.Flow,
 			Encryption: s.Encryption,
+		}); err != nil {
+			return nil, err
 		}
-		settingsJSON, _ := json.Marshal(settings)
-		outboundConf.Settings = (*json.RawMessage)(&settingsJSON)
 
 	case core.VMessSettings:
-		outboundConf.Protocol = "vmess"
-		settings := &conf.VMessOutboundConfig{
+		if err := applyOutboundSettings(outboundConf, "vmess", &conf.VMessOutboundConfig{
 			Address:  parseAddr(config.Server),
 			Port:     uint16(config.Port),
 			ID:       s.UUID,
 			Security: s.Security,
+		}); err != nil {
+			return nil, err
 		}
-		settingsJSON, _ := json.Marshal(settings)
-		outboundConf.Settings = (*json.RawMessage)(&settingsJSON)
 
 	case core.TrojanSettings:
-		outboundConf.Protocol = "trojan"
-		settings := &conf.TrojanClientConfig{
+		if err := applyOutboundSettings(outboundConf, "trojan", &conf.TrojanClientConfig{
 			Address:  parseAddr(config.Server),
 			Port:     uint16(config.Port),
 			Password: s.Password,
+		}); err != nil {
+			return nil, err
 		}
-		settingsJSON, _ := json.Marshal(settings)
-		outboundConf.Settings = (*json.RawMessage)(&settingsJSON)
 
 	case core.ShadowsocksSettings:
-		outboundConf.Protocol = "shadowsocks"
-		settings := &conf.ShadowsocksClientConfig{
+		if err := applyOutboundSettings(outboundConf, "shadowsocks", &conf.ShadowsocksClientConfig{
 			Address:  parseAddr(config.Server),
 			Port:     uint16(config.Port),
 			Cipher:   s.Method,
 			Password: s.Password,
+		}); err != nil {
+			return nil, err
 		}
-		settingsJSON, _ := json.Marshal(settings)
-		outboundConf.Settings = (*json.RawMessage)(&settingsJSON)
 
 	case core.Hysteria2Settings:
-		outboundConf.Protocol = "hysteria"
-		settings := &conf.HysteriaClientConfig{
+		if err := applyOutboundSettings(outboundConf, "hysteria", &conf.HysteriaClientConfig{
 			Version: 2,
 			Address: parseAddr(config.Server),
 			Port:    uint16(config.Port),
+		}); err != nil {
+			return nil, err
 		}
-		settingsJSON, _ := json.Marshal(settings)
-		outboundConf.Settings = (*json.RawMessage)(&settingsJSON)
 
 	case core.WireguardSettings:
-		outboundConf.Protocol = "wireguard"
 		peers := make([]*conf.WireGuardPeerConfig, len(s.Peers))
 		for i, p := range s.Peers {
 			peers[i] = &conf.WireGuardPeerConfig{
@@ -88,36 +81,34 @@ func (a *Adapter) ConvertOutbound(config *core.OutboundConfig) (any, error) {
 				Endpoint:  p.Endpoint,
 			}
 		}
-		settings := &conf.WireGuardConfig{
+		if err := applyOutboundSettings(outboundConf, "wireguard", &conf.WireGuardConfig{
 			IsClient:  true,
 			SecretKey: s.SecretKey,
 			Address:   s.Address,
 			Peers:     peers,
+		}); err != nil {
+			return nil, err
 		}
-		settingsJSON, _ := json.Marshal(settings)
-		outboundConf.Settings = (*json.RawMessage)(&settingsJSON)
 
 	case core.SocksSettings:
-		outboundConf.Protocol = "socks"
-		settings := &conf.SocksClientConfig{
+		if err := applyOutboundSettings(outboundConf, "socks", &conf.SocksClientConfig{
 			Address:  parseAddr(config.Server),
 			Port:     uint16(config.Port),
 			Username: s.User,
 			Password: s.Pass,
+		}); err != nil {
+			return nil, err
 		}
-		settingsJSON, _ := json.Marshal(settings)
-		outboundConf.Settings = (*json.RawMessage)(&settingsJSON)
 
 	case core.HTTPSettings:
-		outboundConf.Protocol = "http"
-		settings := &conf.HTTPClientConfig{
+		if err := applyOutboundSettings(outboundConf, "http", &conf.HTTPClientConfig{
 			Address:  parseAddr(config.Server),
 			Port:     uint16(config.Port),
 			Username: s.User,
 			Password: s.Pass,
+		}); err != nil {
+			return nil, err
 		}
-		settingsJSON, _ := json.Marshal(settings)
-		outboundConf.Settings = (*json.RawMessage)(&settingsJSON)
 
 	case core.VLiteSettings:
 		return nil, fmt.Errorf("vlite is not supported by xray-core")
@@ -224,4 +215,14 @@ func (a *Adapter) buildStreamConfig(config *core.OutboundConfig) (*conf.StreamCo
 	}
 
 	return streamConfig, nil
+}
+
+func applyOutboundSettings(out *conf.OutboundDetourConfig, protocol string, settings any) error {
+	out.Protocol = protocol
+	raw, err := settingsRawMessage(settings)
+	if err != nil {
+		return fmt.Errorf("marshal %s settings: %w", protocol, err)
+	}
+	out.Settings = raw
+	return nil
 }

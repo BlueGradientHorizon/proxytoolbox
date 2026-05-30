@@ -67,7 +67,7 @@ func DefaultConfigTaggerFunc(existingTag string, index int) string {
 
 // Validate instantiates the core objects for the given configs and returns validation errors.
 // It does not mutate the given list but creates a copy with generated tags and returns it.
-func (tr *TestRunner) Validate(ctx context.Context, configs []parsers.ProxyConfig, taggerFunc func(string, int) string) ([]parsers.ProxyConfig, []ValidationError, error) {
+func (tr *TestRunner) Validate(ctx context.Context, configs []parsers.ProxyConfig, taggerFunc func(string, int) string) ([]parsers.ProxyConfig, []*ValidationError, error) {
 	configsCopy := make([]parsers.ProxyConfig, len(configs))
 	for i, c := range configs {
 		configsCopy[i] = c
@@ -86,16 +86,16 @@ func (tr *TestRunner) Validate(ctx context.Context, configs []parsers.ProxyConfi
 		return nil, nil, err
 	}
 
-	var validationErrors []ValidationError
+	var validationErrors []*ValidationError
 
-	validateReq := worker.Request{
-		Type:    worker.RequestTypeValidate,
-		Configs: toRawConfigs(extractConfigs(configsCopy)),
+	validateReq := &worker.PBRequest{
+		Type:    worker.PBRequestType_REQUEST_VALIDATE,
+		Configs: toPBOutboundConfigs(extractConfigs(configsCopy)),
 	}
 
-	err = proc.SendRequest(ctx, validateReq, func(r worker.Response) {
-		if r.Type == worker.ResponseTypeValidation {
-			validationErrors = r.ValidationErrors
+	err = proc.SendRequest(ctx, validateReq, func(r *worker.PBResponse) {
+		if r.GetType() == worker.PBResponseType_RESPONSE_VALIDATION {
+			validationErrors = r.GetValidationErrors()
 		}
 	})
 	if err != nil {
@@ -125,7 +125,7 @@ func (tr *TestRunner) RunLatencyTests(ctx context.Context, tags []string, ltRunn
 		ctx:      ctx,
 		tags:     tags,
 		settings: &ltRunnerSettings,
-		buildTestReq: func(currentTags []string, c *LatencyTestRunnerSettings) worker.Request {
+		buildTestReq: func(currentTags []string, c *LatencyTestRunnerSettings) *worker.PBRequest {
 			testURL := c.TestURL
 			if testURL == "" {
 				testURL = presets.Google204
@@ -137,29 +137,26 @@ func (tr *TestRunner) RunLatencyTests(ctx context.Context, tags []string, ltRunn
 			}
 			rawReq, _ := httputil.DumpRequest(req, false)
 
-			s, err := mustMarshal(worker.LatencyTestSettings{
-				TestURL:     testURL,
-				RawRequest:  rawReq,
-				Timeout:     c.Timeout,
-				Concurrency: base.Concurrency,
-			})
-			if err != nil {
-				panic(fmt.Sprintf("marshal latency settings: %v", err))
-			}
-
-			return worker.Request{
-				Type:     worker.RequestTypeTest,
-				TestType: worker.TestTypeLatency,
-				Tags:     currentTags,
-				Settings: s,
+			return &worker.PBRequest{
+				Type:     worker.PBRequestType_REQUEST_TEST,
+				TestType: worker.PBTestType_TEST_LATENCY,
+				Tags:     worker.StringsToPBTags(currentTags),
+				Settings: &worker.PBRequest_LatencySettings{
+					LatencySettings: worker.LatencyTestSettingsToPB(worker.LatencyTestSettings{
+						TestURL:     testURL,
+						RawRequest:  rawReq,
+						Timeout:     c.Timeout,
+						Concurrency: base.Concurrency,
+					}),
+				},
 			}
 		},
-		convert: func(r worker.Response) LatencyTestResult {
+		convert: func(r *worker.PBResponse) LatencyTestResult {
 			var err error
-			if r.Error != "" {
-				err = fmt.Errorf("%s", r.Error)
+			if r.GetError() != "" {
+				err = fmt.Errorf("%s", r.GetError())
 			}
-			return LatencyTestResult{Tag: r.Tag, Delay: r.LatencyMs, Error: err}
+			return LatencyTestResult{Tag: worker.PBBytesToString(r.GetTag()), Delay: r.GetLatencyMs(), Error: err}
 		},
 		onProgress: progressCb,
 		isSuccess:  func(r LatencyTestResult) bool { return r.Error == nil },
@@ -192,50 +189,43 @@ func (tr *TestRunner) RunSpeedTests(ctx context.Context, tags []string, stRunner
 		ctx:      ctx,
 		tags:     tags,
 		settings: &stRunnerSettings,
-		buildTestReq: func(currentTags []string, c *SpeedTestRunnerSettings) worker.Request {
-			// 1. Generate the URL from provider
+		buildTestReq: func(currentTags []string, c *SpeedTestRunnerSettings) *worker.PBRequest {
 			testURL := c.Provider.GetURL(c.Mode, c.TargetBytes)
 
-			// Determine HTTP method
 			method := http.MethodGet
 			if c.Mode == worker.SpeedTestModeUpload {
 				method = http.MethodPost
 			}
 
-			// 2. Create a temporary request and apply ModifyRequest logic
 			req, _ := http.NewRequest(method, testURL, nil)
 			if c.Provider.ModifyRequest != nil {
 				c.Provider.ModifyRequest(req, c.Mode, c.TargetBytes)
 			}
 
-			// 3. Serialize the request to wire format (excluding body)
 			rawReq, _ := httputil.DumpRequest(req, false)
 
-			s, err := mustMarshal(worker.SpeedTestSettings{
-				Mode:        c.Mode,
-				Timeout:     c.Timeout,
-				TargetBytes: c.TargetBytes,
-				Concurrency: base.Concurrency,
-				TestURL:     testURL,
-				RawRequest:  rawReq,
-			})
-			if err != nil {
-				panic(fmt.Sprintf("marshal speed settings: %v", err))
-			}
-
-			return worker.Request{
-				Type:     worker.RequestTypeTest,
-				TestType: worker.TestTypeSpeed,
-				Tags:     currentTags,
-				Settings: s,
+			return &worker.PBRequest{
+				Type:     worker.PBRequestType_REQUEST_TEST,
+				TestType: worker.PBTestType_TEST_SPEED,
+				Tags:     worker.StringsToPBTags(currentTags),
+				Settings: &worker.PBRequest_SpeedSettings{
+					SpeedSettings: worker.SpeedTestSettingsToPB(worker.SpeedTestSettings{
+						Mode:        c.Mode,
+						Timeout:     c.Timeout,
+						TargetBytes: c.TargetBytes,
+						Concurrency: base.Concurrency,
+						TestURL:     testURL,
+						RawRequest:  rawReq,
+					}),
+				},
 			}
 		},
-		convert: func(r worker.Response) SpeedTestResult {
+		convert: func(r *worker.PBResponse) SpeedTestResult {
 			var err error
-			if r.Error != "" {
-				err = fmt.Errorf("%s", r.Error)
+			if r.GetError() != "" {
+				err = fmt.Errorf("%s", r.GetError())
 			}
-			return SpeedTestResult{Tag: r.Tag, Speed: r.Speed, Error: err}
+			return SpeedTestResult{Tag: worker.PBBytesToString(r.GetTag()), Speed: r.GetSpeed(), Error: err}
 		},
 		onProgress: progressCb,
 		isSuccess:  func(r SpeedTestResult) bool { return r.Error == nil },
@@ -256,8 +246,8 @@ type ipcTestRunner[TResult any, TSettings testSettings] struct {
 	ctx          context.Context
 	tags         []string
 	settings     TSettings
-	buildTestReq func([]string, TSettings) worker.Request
-	convert      func(worker.Response) TResult
+	buildTestReq func([]string, TSettings) *worker.PBRequest
+	convert      func(*worker.PBResponse) TResult
 	onProgress   func(TResult)
 	isSuccess    func(TResult) bool
 	getTag       func(TResult) string
@@ -277,7 +267,6 @@ func (itr *ipcTestRunner[TResult, TSettings]) run() (any, error) {
 
 	currentTags := itr.tags
 
-	// --- Test phase ---
 	var final []TResult
 
 	for round := 0; round < base.Rounds; round++ {
@@ -294,9 +283,9 @@ func (itr *ipcTestRunner[TResult, TSettings]) run() (any, error) {
 		req := itr.buildTestReq(currentTags, itr.settings)
 		var roundResults []TResult
 
-		err = proc.SendRequest(itr.ctx, req, func(r worker.Response) {
-			switch r.Type {
-			case worker.ResponseTypeResult:
+		err = proc.SendRequest(itr.ctx, req, func(r *worker.PBResponse) {
+			switch r.GetType() {
+			case worker.PBResponseType_RESPONSE_RESULT:
 				res := itr.convert(r)
 				roundResults = append(roundResults, res)
 				if itr.onProgress != nil {

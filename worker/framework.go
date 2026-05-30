@@ -3,7 +3,6 @@ package worker
 import (
 	"bufio"
 	"context"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -15,14 +14,15 @@ import (
 	"time"
 
 	"github.com/bluegradienthorizon/proxytoolbox/core"
+	"google.golang.org/protobuf/proto"
 )
 
 // Worker is the ONLY interface a new worker has to implement.
 type Worker interface {
-	Info() CoreInfo
-	Validate(ctx context.Context, configs []*core.OutboundConfig, sendResult func(Response)) error
-	TestLatency(ctx context.Context, settings LatencyTestSettings, tags []string, sendResult func(Response)) error
-	TestSpeed(ctx context.Context, settings SpeedTestSettings, tags []string, sendResult func(Response)) error
+	Info() PBCoreInfo
+	Validate(ctx context.Context, configs []*core.OutboundConfig, sendResult func(*PBResponse)) error
+	TestLatency(ctx context.Context, settings LatencyTestSettings, tags []string, sendResult func(*PBResponse)) error
+	TestSpeed(ctx context.Context, settings SpeedTestSettings, tags []string, sendResult func(*PBResponse)) error
 }
 
 // CoreAdapter defines the minimal interface that concrete proxy cores must
@@ -30,7 +30,7 @@ type Worker interface {
 // all lifecycle, routing, and IPC logic is handled by BaseWorker.
 type CoreAdapter interface {
 	// Info returns core identification metadata.
-	Info() CoreInfo
+	Info() PBCoreInfo
 	// Convert transforms a generic OutboundConfig into a core-specific object.
 	Convert(cfg *core.OutboundConfig) (any, error)
 	// ValidateSingle checks a single converted config for validity.
@@ -67,29 +67,29 @@ func NewBaseWorker(adapter CoreAdapter) *BaseWorker {
 }
 
 // Info returns core information from the adapter.
-func (bw *BaseWorker) Info() CoreInfo {
+func (bw *BaseWorker) Info() PBCoreInfo {
 	return bw.adapter.Info()
 }
 
 // Validate converts configurations, validates them individually and as a batch,
 // streams validation errors via IPC, and stores the valid survivors.
-func (bw *BaseWorker) Validate(ctx context.Context, configs []*core.OutboundConfig, sendResult func(Response)) error {
-	var validationErrors []ValidationError
+func (bw *BaseWorker) Validate(ctx context.Context, configs []*core.OutboundConfig, sendResult func(*PBResponse)) error {
+	var validationErrors []*PBValidationError
 	var validConfigs []*core.OutboundConfig
 	var validObjects []any
 
 	for _, cfg := range configs {
 		obj, err := bw.adapter.Convert(cfg)
 		if err != nil {
-			validationErrors = append(validationErrors, ValidationError{
-				Tag:   cfg.Tag,
+			validationErrors = append(validationErrors, &PBValidationError{
+				Tag:   pbB(cfg.Tag),
 				Error: "convert: " + cfg.Type + ": " + err.Error(),
 			})
 			continue
 		}
 		if err := bw.adapter.ValidateSingle(ctx, obj); err != nil {
-			validationErrors = append(validationErrors, ValidationError{
-				Tag:   cfg.Tag,
+			validationErrors = append(validationErrors, &PBValidationError{
+				Tag:   pbB(cfg.Tag),
 				Error: "instantiate: " + cfg.Type + ": " + err.Error(),
 			})
 			continue
@@ -100,15 +100,15 @@ func (bw *BaseWorker) Validate(ctx context.Context, configs []*core.OutboundConf
 
 	if len(validObjects) > 0 {
 		if err := bw.adapter.ValidateBatch(ctx, validObjects); err != nil {
-			validationErrors = append(validationErrors, ValidationError{
-				Tag:   "",
+			validationErrors = append(validationErrors, &PBValidationError{
+				Tag:   nil,
 				Error: err.Error(),
 			})
 		}
 	}
 
-	sendResult(Response{
-		Type:             ResponseTypeValidation,
+	sendResult(&PBResponse{
+		Type:             PBResponseType_RESPONSE_VALIDATION,
 		ValidationErrors: validationErrors,
 	})
 
@@ -159,23 +159,23 @@ func (bw *BaseWorker) selectByTags(tags []string) ([]*core.OutboundConfig, []any
 }
 
 // TestLatency implements Worker.TestLatency by delegating to runTest.
-func (bw *BaseWorker) TestLatency(ctx context.Context, settings LatencyTestSettings, tags []string, sendResult func(Response)) error {
+func (bw *BaseWorker) TestLatency(ctx context.Context, settings LatencyTestSettings, tags []string, sendResult func(*PBResponse)) error {
 	return bw.runTest(ctx, settings, tags, sendResult)
 }
 
 // TestSpeed implements Worker.TestSpeed by delegating to runTest.
-func (bw *BaseWorker) TestSpeed(ctx context.Context, settings SpeedTestSettings, tags []string, sendResult func(Response)) error {
+func (bw *BaseWorker) TestSpeed(ctx context.Context, settings SpeedTestSettings, tags []string, sendResult func(*PBResponse)) error {
 	return bw.runTest(ctx, settings, tags, sendResult)
 }
 
 // runTest orchestrates the full test lifecycle: tag filtering, instance creation
 // and startup, dialer extraction, test execution, result streaming, and
 // asynchronous instance teardown.
-func (bw *BaseWorker) runTest(ctx context.Context, settings any, tags []string, sendResult func(Response)) error {
+func (bw *BaseWorker) runTest(ctx context.Context, settings any, tags []string, sendResult func(*PBResponse)) error {
 	configs, objects, missing := bw.selectByTags(tags)
 
 	for _, tag := range missing {
-		sendResult(Response{Type: ResponseTypeResult, Tag: tag, Error: "tag not found"})
+		sendResult(&PBResponse{Type: PBResponseType_RESPONSE_RESULT, Tag: pbB(tag), Error: "tag not found"})
 	}
 
 	if len(configs) == 0 {
@@ -185,7 +185,7 @@ func (bw *BaseWorker) runTest(ctx context.Context, settings any, tags []string, 
 	inst, err := bw.adapter.CreateInstance(ctx, objects)
 	if err != nil {
 		for _, cfg := range configs {
-			sendResult(Response{Type: ResponseTypeResult, Tag: cfg.Tag, Error: err.Error()})
+			sendResult(&PBResponse{Type: PBResponseType_RESPONSE_RESULT, Tag: pbB(cfg.Tag), Error: err.Error()})
 		}
 		return nil
 	}
@@ -212,7 +212,7 @@ func (bw *BaseWorker) runTest(ctx context.Context, settings any, tags []string, 
 		wait := lt.Run(ch)
 		for range proxies {
 			r := <-ch
-			resp := Response{Type: ResponseTypeResult, Tag: r.Tag, LatencyMs: r.Delay}
+			resp := &PBResponse{Type: PBResponseType_RESPONSE_RESULT, Tag: pbB(r.Tag), LatencyMs: r.Delay}
 			if r.Error != nil {
 				resp.Error = r.Error.Error()
 			}
@@ -229,7 +229,7 @@ func (bw *BaseWorker) runTest(ctx context.Context, settings any, tags []string, 
 		wait := st.Run(ch)
 		for range proxies {
 			r := <-ch
-			resp := Response{Type: ResponseTypeResult, Tag: r.Tag, Speed: r.Speed}
+			resp := &PBResponse{Type: PBResponseType_RESPONSE_RESULT, Tag: pbB(r.Tag), Speed: r.Speed}
 			if r.Error != nil {
 				resp.Error = r.Error.Error()
 			}
@@ -254,13 +254,18 @@ func (bw *BaseWorker) runTest(ctx context.Context, settings any, tags []string, 
 // Run parses --info / --run and blocks forever serving TCP requests.
 func Run(worker Worker) {
 	var infoFlag, runFlag bool
-	flag.BoolVar(&infoFlag, "info", false, "Print core info as JSON and exit")
+	flag.BoolVar(&infoFlag, "info", false, "Print core info as protobuf and exit")
 	flag.BoolVar(&runFlag, "run", false, "Run worker server")
 	flag.Parse()
 
 	if infoFlag {
-		b, _ := json.Marshal(worker.Info())
-		fmt.Println(string(b))
+		info := worker.Info()
+		b, err := proto.Marshal(&info)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "marshal info: %v\n", err)
+			os.Exit(1)
+		}
+		os.Stdout.Write(b)
 		os.Exit(0)
 	}
 
@@ -292,7 +297,6 @@ func Run(worker Worker) {
 
 func handle(conn net.Conn, worker Worker) {
 	bw := bufio.NewWriter(conn)
-	dec := json.NewDecoder(conn)
 	sw := &sessionWriter{bw: bw}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -309,75 +313,76 @@ func handle(conn net.Conn, worker Worker) {
 	}()
 
 	for {
-		var req Request
-		if err := dec.Decode(&req); err != nil {
+		var req PBRequest
+		if err := ReadPB(conn, &req); err != nil {
 			if err == io.EOF {
 				return
 			}
-			sw.Write(Response{Type: ResponseTypeError, Error: err.Error()})
+			sw.Write(&PBResponse{Type: PBResponseType_RESPONSE_ERROR, Error: err.Error()})
 			return
 		}
 
 		// Handle each request in its own goroutine so that the main read loop
 		// can immediately detect connection loss (parent termination) via EOF
 		// even while a long-running test is in progress.
-		go func(req Request) {
+		go func(req PBRequest) {
 			if !sw.TryLock() {
-				sw.Write(Response{Type: ResponseTypeBusy})
-				sw.Write(Response{Type: ResponseTypeDone})
+				sw.Write(&PBResponse{Type: PBResponseType_RESPONSE_BUSY})
+				sw.Write(&PBResponse{Type: PBResponseType_RESPONSE_DONE})
 				return
 			}
 			defer sw.Unlock()
 
 			var err error
-			switch req.Type {
-			case RequestTypeValidate:
-				configs, deserializeErrs := toCoreConfigs(req.Configs)
-				sendResultWrapped := func(r Response) {
-					if r.Type == ResponseTypeValidation {
-						r.ValidationErrors = append(deserializeErrs, r.ValidationErrors...)
+			switch req.GetType() {
+			case PBRequestType_REQUEST_VALIDATE:
+				configs, deserializeErrs := toCoreConfigs(req.GetConfigs())
+				sendResultWrapped := func(r *PBResponse) {
+					if r.GetType() == PBResponseType_RESPONSE_VALIDATION {
+						r.ValidationErrors = append(deserializeErrs, r.GetValidationErrors()...)
 					}
 					sw.Write(r)
 				}
 				err = worker.Validate(ctx, configs, sendResultWrapped)
-			case RequestTypeTest:
-				switch req.TestType {
-				case TestTypeLatency:
-					var s LatencyTestSettings
-					if err = json.Unmarshal(req.Settings, &s); err == nil {
-						err = worker.TestLatency(ctx, s, req.Tags, sw.Write)
+			case PBRequestType_REQUEST_TEST:
+				switch req.GetTestType() {
+				case PBTestType_TEST_LATENCY:
+					if ls, ok := req.GetSettings().(*PBRequest_LatencySettings); ok && ls.LatencySettings != nil {
+						err = worker.TestLatency(ctx, PBLatencyTestSettingsToGo(ls.LatencySettings), PBTagsToStrings(req.GetTags()), sw.Write)
+					} else {
+						err = fmt.Errorf("missing latency settings")
 					}
-				case TestTypeSpeed:
-					var s SpeedTestSettings
-					if err = json.Unmarshal(req.Settings, &s); err == nil {
-						err = worker.TestSpeed(ctx, s, req.Tags, sw.Write)
+				case PBTestType_TEST_SPEED:
+					if ss, ok := req.GetSettings().(*PBRequest_SpeedSettings); ok && ss.SpeedSettings != nil {
+						err = worker.TestSpeed(ctx, PBSpeedTestSettingsToGo(ss.SpeedSettings), PBTagsToStrings(req.GetTags()), sw.Write)
+					} else {
+						err = fmt.Errorf("missing speed settings")
 					}
 				default:
-					err = fmt.Errorf("unknown test type: %s", req.TestType)
+					err = fmt.Errorf("unknown test type: %v", req.GetTestType())
 				}
 			default:
-				err = fmt.Errorf("unknown request type: %s", req.Type)
+				err = fmt.Errorf("unknown request type: %v", req.GetType())
 			}
 
 			if err != nil {
-				sw.Write(Response{Type: ResponseTypeError, Error: err.Error()})
+				sw.Write(&PBResponse{Type: PBResponseType_RESPONSE_ERROR, Error: err.Error()})
 			}
-			sw.Write(Response{Type: ResponseTypeDone})
+			sw.Write(&PBResponse{Type: PBResponseType_RESPONSE_DONE})
 		}(req)
 	}
 }
 
 type sessionWriter struct {
 	sessionMu sync.Mutex
-	lineMu    sync.Mutex
+	writeMu   sync.Mutex
 	bw        *bufio.Writer
 }
 
-func (sw *sessionWriter) Write(r Response) {
-	sw.lineMu.Lock()
-	defer sw.lineMu.Unlock()
-	b, _ := json.Marshal(r)
-	fmt.Fprintf(sw.bw, "%s\n", b)
+func (sw *sessionWriter) Write(r *PBResponse) {
+	sw.writeMu.Lock()
+	defer sw.writeMu.Unlock()
+	WritePB(sw.bw, r)
 	sw.bw.Flush()
 }
 
@@ -393,14 +398,18 @@ func (sw *sessionWriter) Unlock() {
 	sw.sessionMu.Unlock()
 }
 
-func toCoreConfigs(raw []*RawConfig) ([]*core.OutboundConfig, []ValidationError) {
+func toCoreConfigs(raw []*PBOutboundConfig) ([]*core.OutboundConfig, []*PBValidationError) {
 	out := make([]*core.OutboundConfig, 0, len(raw))
-	var errs []ValidationError
+	var errs []*PBValidationError
 	for _, rc := range raw {
-		cfg, err := rc.ToCore()
+		cfg, err := PBOutboundConfigToCore(rc)
 		if err != nil {
-			errs = append(errs, ValidationError{
-				Tag:   rc.Tag,
+			tag := ""
+			if rc != nil {
+				tag = pbS(rc.GetTag())
+			}
+			errs = append(errs, &PBValidationError{
+				Tag:   pbB(tag),
 				Error: "deserialize: " + err.Error(),
 			})
 			continue

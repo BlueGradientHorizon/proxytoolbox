@@ -2,7 +2,6 @@ package registry
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -10,17 +9,15 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/bluegradienthorizon/proxytoolbox/worker"
+	"google.golang.org/protobuf/proto"
 )
 
 type WorkerInfo struct {
 	Name    string
 	Version string
 	Path    string
-}
-
-type workerInfoJSON struct {
-	Name    string `json:"name"`
-	Version string `json:"version"`
 }
 
 type Registry struct {
@@ -80,14 +77,14 @@ func probe(path string) (*WorkerInfo, error) {
 	if err != nil {
 		return nil, err
 	}
-	var ci workerInfoJSON
-	if err := json.Unmarshal(out, &ci); err != nil {
+	var ci worker.PBCoreInfo
+	if err := proto.Unmarshal(out, &ci); err != nil {
 		return nil, err
 	}
-	if ci.Name == "" {
+	if ci.GetName() == "" {
 		return nil, fmt.Errorf("worker %s returned empty name", path)
 	}
-	return &WorkerInfo{Name: ci.Name, Version: ci.Version, Path: path}, nil
+	return &WorkerInfo{Name: ci.GetName(), Version: ci.GetVersion(), Path: path}, nil
 }
 
 func isExecutable(entry os.DirEntry) (bool, error) {

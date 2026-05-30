@@ -1,0 +1,225 @@
+syntax = "proto3";
+
+package worker;
+
+option go_package = "github.com/bluegradienthorizon/proxytoolbox/worker";
+
+enum PBRequestType {
+  REQUEST_UNSPECIFIED = 0;
+  REQUEST_VALIDATE = 1;
+  REQUEST_TEST = 2;
+}
+
+enum PBTestType {
+  TEST_UNSPECIFIED = 0;
+  TEST_LATENCY = 1;
+  TEST_SPEED = 2;
+}
+
+enum PBResponseType {
+  RESPONSE_UNSPECIFIED = 0;
+  RESPONSE_VALIDATION = 1;
+  RESPONSE_RESULT = 2;
+  RESPONSE_ERROR = 3;
+  RESPONSE_BUSY = 4;
+  RESPONSE_DONE = 5;
+}
+
+enum PBSpeedTestMode {
+  SPEED_UNSPECIFIED = 0;
+  SPEED_DOWNLOAD = 1;
+  SPEED_UPLOAD = 2;
+}
+
+message PBCoreInfo {
+  string name = 1;
+  string version = 2;
+}
+
+message PBValidationError {
+  bytes tag = 1;
+  string error = 2;
+}
+
+message PBResponse {
+  PBResponseType type = 1;
+  repeated PBValidationError validation_errors = 2;
+  bytes tag = 3;
+  string error = 4;
+  int64 latency_ms = 5;
+  double speed = 6;
+}
+
+message PBLatencyTestSettings {
+  string test_url = 1;
+  bytes raw_request = 2;
+  int64 timeout_nanos = 3;
+  int32 concurrency = 4;
+}
+
+message PBSpeedTestSettings {
+  PBSpeedTestMode mode = 1;
+  string test_url = 2;
+  bytes raw_request = 3;
+  int64 timeout_nanos = 4;
+  int64 target_bytes = 5;
+  int32 concurrency = 6;
+}
+
+message PBObfsConfig {
+  bytes type = 1;
+  bytes password = 2;
+}
+
+message PBVLESSSettings {
+  bytes uuid = 1;
+  bytes flow = 2;
+  bytes encryption = 3;
+}
+
+message PBTrojanSettings {
+  bytes password = 1;
+}
+
+message PBVMessSettings {
+  bytes uuid = 1;
+  int32 alter_id = 2;
+  bytes security = 3;
+}
+
+message PBShadowsocksSettings {
+  bytes method = 1;
+  bytes password = 2;
+}
+
+message PBHysteria2Settings {
+  bytes password = 1;
+  PBObfsConfig obfs = 2;
+}
+
+message PBWireguardPeer {
+  bytes public_key = 1;
+  bytes endpoint = 2;
+}
+
+message PBWireguardSettings {
+  bytes secret_key = 1;
+  repeated bytes address = 2;
+  repeated PBWireguardPeer peers = 3;
+}
+
+message PBSocksSettings {
+  bytes version = 1;
+  bytes user = 2;
+  bytes pass = 3;
+}
+
+message PBHTTPSettings {
+  bytes user = 1;
+  bytes pass = 2;
+}
+
+message PBVLiteSettings {
+  bytes password = 1;
+}
+
+message PBRealityConfig {
+  bytes public_key = 1;
+  bytes short_id = 2;
+  bytes spider_x = 3;
+}
+
+message PBECHConfig {
+  repeated bytes config = 1;
+}
+
+message PBTLSConfig {
+  bool enabled = 1;
+  bytes server_name = 2;
+  bool insecure = 3;
+  repeated bytes alpn = 4;
+  bytes fingerprint = 5;
+  PBRealityConfig reality = 6;
+  PBECHConfig ech = 7;
+}
+
+message PBHTTPConfig {
+  repeated bytes host = 1;
+  bytes path = 2;
+  bytes method = 3;
+}
+
+message PBWebSocketConfig {
+  bytes path = 1;
+  bytes host = 2;
+}
+
+message PBQUICConfig {}
+
+message PBGRPCConfig {
+  bytes service_name = 1;
+}
+
+message PBHTTPUpgradeConfig {
+  bytes host = 1;
+  bytes path = 2;
+}
+
+message PBXHTTPConfig {
+  bytes host = 1;
+  bytes path = 2;
+  bytes mode = 3;
+  map<string, bytes> extra = 4;
+}
+
+message PBSplitHTTPConfig {
+  bytes host = 1;
+  bytes path = 2;
+}
+
+message PBKCPConfig {
+  bytes seed = 1;
+}
+
+message PBTransportConfig {
+  string type = 1;
+  PBHTTPConfig http = 2;
+  PBWebSocketConfig websocket = 3;
+  PBQUICConfig quic = 4;
+  PBGRPCConfig grpc = 5;
+  PBHTTPUpgradeConfig http_upgrade = 6;
+  PBXHTTPConfig xhttp = 7;
+  PBSplitHTTPConfig split_http = 8;
+  PBKCPConfig kcp = 9;
+}
+
+message PBOutboundConfig {
+  bytes tag = 1;
+  bytes type = 2;
+  bytes server = 3;
+  uint32 port = 4;
+  PBTLSConfig tls = 5;
+  PBTransportConfig transport = 6;
+  oneof settings {
+    PBVLESSSettings vless = 7;
+    PBTrojanSettings trojan = 8;
+    PBVMessSettings vmess = 9;
+    PBShadowsocksSettings shadowsocks = 10;
+    PBHysteria2Settings hysteria2 = 11;
+    PBWireguardSettings wireguard = 12;
+    PBSocksSettings socks = 13;
+    PBHTTPSettings http = 14;
+    PBVLiteSettings vlite = 15;
+  }
+}
+
+message PBRequest {
+  PBRequestType type = 1;
+  PBTestType test_type = 2;
+  repeated PBOutboundConfig configs = 3;
+  repeated bytes tags = 4;
+  oneof settings {
+    PBLatencyTestSettings latency_settings = 5;
+    PBSpeedTestSettings speed_settings = 6;
+  }
+}

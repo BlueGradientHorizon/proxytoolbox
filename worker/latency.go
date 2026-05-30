@@ -28,10 +28,10 @@ type LatencyTestResult struct {
 
 // LatencyTestSettings configures the latency test behavior.
 type LatencyTestSettings struct {
-	TestURL     string        `json:"test_url,omitempty"`
-	RawRequest  []byte        `json:"raw_request"`
-	Timeout     time.Duration `json:"timeout"`
-	Concurrency int           `json:"concurrency"`
+	TestURL     string
+	RawRequest  []byte
+	Timeout     time.Duration
+	Concurrency int
 }
 
 // LatencyTest performs latency testing on multiple proxies in parallel.

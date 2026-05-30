@@ -25,8 +25,8 @@ func main() {
 
 	ltSettings := latencyTestSettings{
 		Concurrency: 0,
-		Timeout:     7 * time.Second,
-		Rounds:      3,
+		Timeout:     10 * time.Second,
+		Rounds:      2,
 		TestURL:     presets.Google204,
 	}
 	runSpeedTestFlag := true
@@ -80,7 +80,7 @@ func main() {
 
 	fmt.Printf("Valid configs: %d\n", len(validConfigs))
 
-	const batchSize = 5000
+	const batchSize = 2500
 	var allLatencyResults []runner.LatencyTestResult
 
 	for batchStart := 0; batchStart < len(validConfigs); batchStart += batchSize {
