@@ -74,22 +74,22 @@ func (bw *BaseWorker) Info() PBCoreInfo {
 // Validate converts configurations, validates them individually and as a batch,
 // streams validation errors via IPC, and stores the valid survivors.
 func (bw *BaseWorker) Validate(ctx context.Context, configs []*core.OutboundConfig, sendResult func(*PBResponse)) error {
-	var validationErrors []*PBValidationError
+	var validationErrors []ValidationError
 	var validConfigs []*core.OutboundConfig
 	var validObjects []any
 
 	for _, cfg := range configs {
 		obj, err := bw.adapter.Convert(cfg)
 		if err != nil {
-			validationErrors = append(validationErrors, &PBValidationError{
-				Tag:   pbB(cfg.Tag),
+			validationErrors = append(validationErrors, ValidationError{
+				Tag:   cfg.Tag,
 				Error: "convert: " + cfg.Type + ": " + err.Error(),
 			})
 			continue
 		}
 		if err := bw.adapter.ValidateSingle(ctx, obj); err != nil {
-			validationErrors = append(validationErrors, &PBValidationError{
-				Tag:   pbB(cfg.Tag),
+			validationErrors = append(validationErrors, ValidationError{
+				Tag:   cfg.Tag,
 				Error: "instantiate: " + cfg.Type + ": " + err.Error(),
 			})
 			continue
@@ -100,8 +100,7 @@ func (bw *BaseWorker) Validate(ctx context.Context, configs []*core.OutboundConf
 
 	if len(validObjects) > 0 {
 		if err := bw.adapter.ValidateBatch(ctx, validObjects); err != nil {
-			validationErrors = append(validationErrors, &PBValidationError{
-				Tag:   nil,
+			validationErrors = append(validationErrors, ValidationError{
 				Error: err.Error(),
 			})
 		}
@@ -109,7 +108,7 @@ func (bw *BaseWorker) Validate(ctx context.Context, configs []*core.OutboundConf
 
 	sendResult(&PBResponse{
 		Type:             PBResponseType_RESPONSE_VALIDATION,
-		ValidationErrors: validationErrors,
+		ValidationErrors: ValidationErrorsToPB(validationErrors),
 	})
 
 	bw.mu.Lock()
@@ -339,7 +338,8 @@ func handle(conn net.Conn, worker Worker) {
 				configs, deserializeErrs := toCoreConfigs(req.GetConfigs())
 				sendResultWrapped := func(r *PBResponse) {
 					if r.GetType() == PBResponseType_RESPONSE_VALIDATION {
-						r.ValidationErrors = append(deserializeErrs, r.GetValidationErrors()...)
+						merged := append(deserializeErrs, ValidationErrorsFromPB(r.GetValidationErrors())...)
+						r.ValidationErrors = ValidationErrorsToPB(merged)
 					}
 					sw.Write(r)
 				}
@@ -398,9 +398,9 @@ func (sw *sessionWriter) Unlock() {
 	sw.sessionMu.Unlock()
 }
 
-func toCoreConfigs(raw []*PBOutboundConfig) ([]*core.OutboundConfig, []*PBValidationError) {
+func toCoreConfigs(raw []*PBOutboundConfig) ([]*core.OutboundConfig, []ValidationError) {
 	out := make([]*core.OutboundConfig, 0, len(raw))
-	var errs []*PBValidationError
+	var errs []ValidationError
 	for _, rc := range raw {
 		cfg, err := PBOutboundConfigToCore(rc)
 		if err != nil {
@@ -408,8 +408,8 @@ func toCoreConfigs(raw []*PBOutboundConfig) ([]*core.OutboundConfig, []*PBValida
 			if rc != nil {
 				tag = pbS(rc.GetTag())
 			}
-			errs = append(errs, &PBValidationError{
-				Tag:   pbB(tag),
+			errs = append(errs, ValidationError{
+				Tag:   tag,
 				Error: "deserialize: " + err.Error(),
 			})
 			continue

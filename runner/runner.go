@@ -67,7 +67,7 @@ func DefaultConfigTaggerFunc(existingTag string, index int) string {
 
 // Validate instantiates the core objects for the given configs and returns validation errors.
 // It does not mutate the given list but creates a copy with generated tags and returns it.
-func (tr *TestRunner) Validate(ctx context.Context, configs []parsers.ProxyConfig, taggerFunc func(string, int) string) ([]parsers.ProxyConfig, []*ValidationError, error) {
+func (tr *TestRunner) Validate(ctx context.Context, configs []parsers.ProxyConfig, taggerFunc func(string, int) string) ([]parsers.ProxyConfig, []ValidationError, error) {
 	configsCopy := make([]parsers.ProxyConfig, len(configs))
 	for i, c := range configs {
 		configsCopy[i] = c
@@ -86,7 +86,7 @@ func (tr *TestRunner) Validate(ctx context.Context, configs []parsers.ProxyConfi
 		return nil, nil, err
 	}
 
-	var validationErrors []*ValidationError
+	var validationErrors []ValidationError
 
 	validateReq := &worker.PBRequest{
 		Type:    worker.PBRequestType_REQUEST_VALIDATE,
@@ -95,7 +95,7 @@ func (tr *TestRunner) Validate(ctx context.Context, configs []parsers.ProxyConfi
 
 	err = proc.SendRequest(ctx, validateReq, func(r *worker.PBResponse) {
 		if r.GetType() == worker.PBResponseType_RESPONSE_VALIDATION {
-			validationErrors = r.GetValidationErrors()
+			validationErrors = worker.ValidationErrorsFromPB(r.GetValidationErrors())
 		}
 	})
 	if err != nil {

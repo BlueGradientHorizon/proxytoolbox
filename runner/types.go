@@ -18,7 +18,7 @@ type RunnerSettings struct {
 }
 
 // ValidationError represents an error validating proxy configurations
-type ValidationError = worker.PBValidationError
+type ValidationError = worker.ValidationError
 
 // LatencyTestResult contains the result of a latency test for a single proxy.
 type LatencyTestResult = worker.LatencyTestResult
