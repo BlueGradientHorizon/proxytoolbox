@@ -79,7 +79,9 @@ func (bw *BaseWorker) Validate(ctx context.Context, configs []*core.OutboundConf
 	var validObjects []any
 
 	for _, cfg := range configs {
-		obj, err := bw.adapter.Convert(cfg)
+		obj, err := recoverValueError(func() (any, error) {
+			return bw.adapter.Convert(cfg)
+		})
 		if err != nil {
 			validationErrors = append(validationErrors, ValidationError{
 				Tag:   cfg.Tag,
@@ -87,7 +89,9 @@ func (bw *BaseWorker) Validate(ctx context.Context, configs []*core.OutboundConf
 			})
 			continue
 		}
-		if err := bw.adapter.ValidateSingle(ctx, obj); err != nil {
+		if err := recoverError(func() error {
+			return bw.adapter.ValidateSingle(ctx, obj)
+		}); err != nil {
 			validationErrors = append(validationErrors, ValidationError{
 				Tag:   cfg.Tag,
 				Error: "instantiate: " + cfg.Type + ": " + err.Error(),
@@ -99,7 +103,9 @@ func (bw *BaseWorker) Validate(ctx context.Context, configs []*core.OutboundConf
 	}
 
 	if len(validObjects) > 0 {
-		if err := bw.adapter.ValidateBatch(ctx, validObjects); err != nil {
+		if err := recoverError(func() error {
+			return bw.adapter.ValidateBatch(ctx, validObjects)
+		}); err != nil {
 			validationErrors = append(validationErrors, ValidationError{
 				Error: err.Error(),
 			})
@@ -181,7 +187,9 @@ func (bw *BaseWorker) runTest(ctx context.Context, settings any, tags []string, 
 		return nil
 	}
 
-	inst, err := bw.adapter.CreateInstance(ctx, objects)
+	inst, err := recoverValueError(func() (any, error) {
+		return bw.adapter.CreateInstance(ctx, objects)
+	})
 	if err != nil {
 		for _, cfg := range configs {
 			sendResult(&PBResponse{Type: PBResponseType_RESPONSE_RESULT, Tag: pbB(cfg.Tag), Error: err.Error()})
@@ -189,12 +197,16 @@ func (bw *BaseWorker) runTest(ctx context.Context, settings any, tags []string, 
 		return nil
 	}
 
-	if err := bw.adapter.StartInstance(inst); err != nil {
+	if err := recoverError(func() error {
+		return bw.adapter.StartInstance(inst)
+	}); err != nil {
 		bw.adapter.CloseInstance(inst)
 		return err
 	}
 
-	proxies, dialers, err := bw.adapter.ExtractDialers(inst)
+	proxies, dialers, err := recoverDialers(func() ([]ProxyInfo, []DialerFunc, error) {
+		return bw.adapter.ExtractDialers(inst)
+	})
 	if err != nil {
 		bw.adapter.CloseInstance(inst)
 		return err
